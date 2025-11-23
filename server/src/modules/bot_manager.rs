@@ -133,13 +133,13 @@ impl BotManager {
         let bot_id = Uuid::parse_str(&bot_id_str).ok()?;
 
         // Update last_used
-        if let Err(e) = sqlx::query("UPDATE bot_tokens SET last_used = ? WHERE token_hash = ?")
+        if let Err(e) = sqlx::query("UPDATE bot_tokens SET last_used_at = ? WHERE token_hash = ?")
             .bind(Utc::now())
             .bind(&token_hash)
             .execute(&self.pool)
             .await 
         {
-            error!("Failed to update last_used for bot token: {}", e);
+            error!("Failed to update last_used_at for bot token: {}", e);
         }
 
         Some((bot_id, arch))
@@ -163,7 +163,7 @@ impl BotManager {
     
     /// List all registered bot tokens
     pub async fn list_tokens(&self) -> Vec<BotToken> {
-        let rows = match sqlx::query("SELECT token_hash, bot_id, arch, created_at, last_used FROM bot_tokens")
+        let rows = match sqlx::query("SELECT token_hash, bot_id, arch, created_at, last_used_at FROM bot_tokens")
             .fetch_all(&self.pool)
             .await 
         {
@@ -182,7 +182,7 @@ impl BotManager {
                 bot_id,
                 arch: row.get("arch"),
                 created_at: row.get("created_at"),
-                last_used: row.get("last_used"),
+                last_used: row.get("last_used_at"),
             })
         }).collect()
     }

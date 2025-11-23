@@ -9,6 +9,7 @@ use super::ui::*;
 pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 5 {
         client.write(b"\x1b[38;5;196m[X] Usage: attack <method> <target> <port> <duration>\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: attack UDP 1.2.3.4 80 60\n\r").await?;
         return Ok(());
     }
 
@@ -159,7 +160,7 @@ pub async fn handle_ongoing_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     let title = apply_ice_gradient("Ongoing Attacks");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if attacks.is_empty() {
         client.write(b"  \x1b[38;5;245mNo ongoing attacks\x1b[0m\n\r").await?;
@@ -241,7 +242,7 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     let title = apply_ice_gradient("Attack History");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     // Filter for user unless admin
     let user_history: Vec<_> = history.iter()
@@ -279,7 +280,7 @@ pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -
     
     let title = apply_ice_gradient("Attack Queue");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if queue_items.is_empty() {
         client.write(b"  \x1b[38;5;245mQueue is empty\x1b[0m\n\r").await?;

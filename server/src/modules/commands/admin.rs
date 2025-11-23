@@ -11,7 +11,7 @@ pub async fn handle_admin_command(client: &Arc<Client>, state: &Arc<AppState>) -
     
     let title = apply_ice_gradient("Admin Menu");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let commands = [
         ("users", "Manage users"),
@@ -51,11 +51,11 @@ pub async fn handle_listbots_command(client: &Arc<Client>, state: &Arc<AppState>
     
     let title = apply_ice_gradient("Registered Bots");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let stats_msg = format!("  \x1b[38;5;245mTotal: \x1b[38;5;39m{}\x1b[38;5;245m | Connected: \x1b[38;5;51m{}\x1b[0m\n\r", tokens.len(), bots.len());
     client.write(stats_msg.as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if tokens.is_empty() {
         client.write(b"  \x1b[38;5;245mNo bots registered\x1b[0m\n\r").await?;
@@ -216,7 +216,7 @@ pub async fn handle_banlist_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     let title = apply_ice_gradient("Banned Users");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if banned.is_empty() {
         client.write(b"  \x1b[38;5;245mNo banned users found.\x1b[0m\n\r").await?;
@@ -240,6 +240,7 @@ pub async fn handle_banlist_command(client: &Arc<Client>, state: &Arc<AppState>)
 pub async fn handle_broadcast_command(client: &Arc<Client>, state: &Arc<AppState>, message: &str) -> Result<()> {
     if message.is_empty() {
         client.write(b"\x1b[38;5;196m[X] Usage: broadcast <message>\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: broadcast Server maintenance in 5 minutes\n\r").await?;
         return Ok(());
     }
     
@@ -269,7 +270,7 @@ pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, li
     
     let title = apply_ice_gradient("System Logs");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     // Query logs from database
     let logs = sqlx::query_as::<_, AuditLog>(
@@ -316,7 +317,7 @@ pub async fn handle_sessions_command(client: &Arc<Client>, state: &Arc<AppState>
     
     let title = apply_ice_gradient("Active Sessions");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if clients.is_empty() {
         client.write(b"  \x1b[38;5;245mNo active sessions\x1b[0m\n\r").await?;
@@ -354,6 +355,7 @@ pub async fn handle_userinfo_command(client: &Arc<Client>, state: &Arc<AppState>
         Some(u) => u.to_string(),
         None => {
             client.write(b"\x1b[38;5;196m[X] Usage: userinfo <username>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: userinfo admin\n\r").await?;
             return Ok(());
         }
     };
@@ -363,7 +365,7 @@ pub async fn handle_userinfo_command(client: &Arc<Client>, state: &Arc<AppState>
         
         let title = apply_ice_gradient("User Information");
         client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-        client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+        client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
         
         // User info lines
         let username_gradient = apply_gradient(&user.username, 39, 45);
@@ -391,6 +393,7 @@ pub async fn handle_lock_command(client: &Arc<Client>, state: &Arc<AppState>, pa
         Some(u) => u.to_string(),
         None => {
             client.write(b"\x1b[38;5;196m[X] Usage: lock <username>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: lock baduser\n\r").await?;
             return Ok(());
         }
     };
@@ -417,7 +420,7 @@ pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>
     
     let title = apply_ice_gradient("Bot Statistics");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     // Stats lines
     let count_gradient = apply_gradient(&bot_count.to_string(), 39, 51);
@@ -440,11 +443,11 @@ pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState
     
     let title = apply_ice_gradient("User List");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let total_msg = format!("  \x1b[38;5;245mTotal Users: \x1b[38;5;39m{}\x1b[0m\n\r", users.len());
     client.write(total_msg.as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     for user in users {
         let expired = if user.expire < chrono::Utc::now() { " [EXPIRED]" } else { "" };
@@ -472,6 +475,7 @@ pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState
 pub async fn handle_blacklist_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {
         client.write(b"\x1b[38;5;196m[X] Usage: blacklist <add/remove> <ip> [reason]\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: blacklist add 1.2.3.4 Spamming\n\r").await?;
         return Ok(());
     }
     
@@ -524,6 +528,7 @@ pub async fn handle_blacklist_command(client: &Arc<Client>, state: &Arc<AppState
 pub async fn handle_whitelist_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {
         client.write(b"\x1b[38;5;196m[X] Usage: whitelist <add/remove> <ip> [description]\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: whitelist add 1.2.3.4 Trusted VPN\n\r").await?;
         return Ok(());
     }
     

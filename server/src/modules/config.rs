@@ -66,6 +66,9 @@ pub struct Config {
 
     #[serde(default = "default_terminal_width")]
     pub terminal_width: usize,
+
+    #[serde(default = "default_terminal_height")]
+    pub terminal_height: usize,
 }
 
 fn default_user_server_ip() -> String { "0.0.0.0".to_string() }
@@ -89,6 +92,7 @@ fn default_bot_auth_timeout_secs() -> u64 { 5 }
 fn default_strict_tls() -> bool { false }
 fn default_rate_limit_per_minute() -> u32 { 10 }
 fn default_terminal_width() -> usize { 90 }
+fn default_terminal_height() -> usize { 32 }
 
 impl Default for Config {
     fn default() -> Self {
@@ -114,6 +118,7 @@ impl Default for Config {
             strict_tls: default_strict_tls(),
             rate_limit_per_minute: default_rate_limit_per_minute(),
             terminal_width: default_terminal_width(),
+            terminal_height: default_terminal_height(),
         }
     }
 }
@@ -129,9 +134,15 @@ impl Config {
         
         for path in toml_paths {
             if Path::new(path).exists() {
-                if let Ok(config) = Self::from_toml_file(path) {
-                    tracing::info!("Configuration loaded from {}", path);
-                    return config;
+                match Self::from_toml_file(path) {
+                    Ok(config) => {
+                        tracing::info!("Configuration loaded from {}", path);
+                        tracing::info!("Terminal dimensions: {}x{}", config.terminal_width, config.terminal_height);
+                        return config;
+                    },
+                    Err(e) => {
+                        tracing::warn!("Failed to parse config file {}: {}", path, e);
+                    }
                 }
             }
         }
@@ -200,6 +211,9 @@ impl Config {
         }
         if let Some(width) = server_section.get("terminal_width").and_then(|v| v.as_integer()) {
             config.terminal_width = width as usize;
+        }
+        if let Some(height) = server_section.get("terminal_height").and_then(|v| v.as_integer()) {
+            config.terminal_height = height as usize;
         }
         
         // Parse limits section if it exists
@@ -297,6 +311,10 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(default_terminal_width),
+            terminal_height: env::var("TERMINAL_HEIGHT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(default_terminal_height),
         }
     }
     
@@ -382,6 +400,8 @@ impl Config {
             deployment_mode: &'a str,
             login_magic_string: &'a str,
             strict_tls: bool,
+            terminal_width: usize,
+            terminal_height: usize,
         }
         
         #[derive(Serialize)]
@@ -411,6 +431,8 @@ impl Config {
                 deployment_mode: &self.deployment_mode,
                 login_magic_string: &self.login_magic_string,
                 strict_tls: self.strict_tls,
+                terminal_width: self.terminal_width,
+                terminal_height: self.terminal_height,
             },
             limits: LimitsConfig {
                 max_bots: self.max_bot_connections,

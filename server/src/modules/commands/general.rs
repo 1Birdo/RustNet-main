@@ -19,9 +19,10 @@ pub async fn render_status_bar(client: &Arc<Client>, state: &Arc<AppState>) -> R
     
     let breadcrumb = client.get_breadcrumb().await;
     let width = get_terminal_width(state).await;
+    let height = get_terminal_height(state).await;
     
-    // Position cursor at row 31 to reserve row 32 for the prompt
-    client.write(b"\x1b[31;1H").await?;
+    // Position cursor at row height-1 to reserve row height for the prompt
+    client.write(format!("\x1b[{};1H", height - 1).as_bytes()).await?;
     
     // Combined line: Breadcrumb on left, Status on right (120 char width)
     let uptime_str = if days > 0 {
@@ -61,7 +62,8 @@ pub async fn render_status_bar(client: &Arc<Client>, state: &Arc<AppState>) -> R
 
 pub async fn show_prompt(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     render_status_bar(client, state).await?;
-    client.write(b"\x1b[32;1H").await?; // Move to last row for prompt
+    let height = get_terminal_height(state).await;
+    client.write(format!("\x1b[{};1H", height).as_bytes()).await?; // Move to last row for prompt
     client.write(b"\x1b[K").await?;    // Clear existing content on the row
     // Changed prompt color to 51 (Cyan) to match water theme
     client.write(b"[\x1b[38;5;51mRustNet\x1b[0m]> ").await?;
@@ -73,7 +75,7 @@ pub async fn handle_help_command(client: &Arc<Client>, state: &Arc<AppState>) ->
     
     let title = apply_ice_gradient("Help Menu");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let commands = [
         ("help", "Show this help menu"),
@@ -100,7 +102,7 @@ pub async fn handle_help_command(client: &Arc<Client>, state: &Arc<AppState>) ->
         client.write(b"\n\r").await?;
         let admin_title = apply_ice_gradient("Admin Commands");
         client.write(format!("  {}\n\r", admin_title).as_bytes()).await?;
-        client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+        client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
         
         let admin_cmds = [
             ("users", "Manage users"),
@@ -132,7 +134,7 @@ pub async fn handle_stats_command(client: &Arc<Client>, state: &Arc<AppState>) -
     
     let title = apply_ice_gradient("Server Statistics");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let bot_gradient = apply_gradient(&bot_count.to_string(), 39, 51);
     client.write(format!("  \x1b[38;5;245mBots Connected  : \x1b[0m{}\n\r", bot_gradient).as_bytes()).await?;
@@ -166,7 +168,7 @@ pub async fn handle_health_command(client: &Arc<Client>, state: &Arc<AppState>) 
     
     let title = apply_ice_gradient("System Health Check");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let status_gradient = apply_gradient(status, status_color, status_color + 6);
     client.write(format!("  \x1b[38;5;245mSystem Status   : \x1b[0m{}\n\r", status_gradient).as_bytes()).await?;
@@ -197,7 +199,7 @@ pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) 
     
     let title = apply_ice_gradient("Online Users");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if clients.is_empty() {
         client.write(b"  \x1b[38;5;245mNo users online\x1b[0m\n\r").await?;
@@ -220,7 +222,7 @@ pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) 
         }
     }
     
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     client.write(format!("  \x1b[38;5;245mTotal Users: \x1b[38;5;39m{}\x1b[0m\n\r", clients.len()).as_bytes()).await?;
     client.write(b"\n\r").await?;
     
@@ -228,12 +230,12 @@ pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) 
     Ok(())
 }
 
-pub async fn handle_whoami_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
+pub async fn handle_whoami_command(client: &Arc<Client>, _state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
     let title = apply_ice_gradient("Your Information");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let level_color = match client.user.get_level() {
         Level::Owner => 39,
@@ -268,7 +270,7 @@ pub async fn handle_uptime_command(client: &Arc<Client>, state: &Arc<AppState>) 
     
     let title = apply_ice_gradient("Server Uptime");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let days_str = apply_gradient(&format!("{}d", days), 39, 45);
     let hours_str = apply_gradient(&format!("{}h", hours), 45, 51);
@@ -284,7 +286,7 @@ pub async fn handle_uptime_command(client: &Arc<Client>, state: &Arc<AppState>) 
     Ok(())
 }
 
-pub async fn handle_gif_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+pub async fn handle_gif_command(client: &Arc<Client>, _state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     use tokio::io::AsyncBufReadExt;
     use std::path::Path;
 
@@ -314,7 +316,7 @@ pub async fn handle_gif_command(client: &Arc<Client>, state: &Arc<AppState>, par
         
         let title = apply_ice_gradient("Available GIFs");
         client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-        client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+        client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
         
         for (i, f) in files.iter().enumerate() {
             let index_gradient = apply_gradient(&format!("{}.", i + 1), 245, 250);
@@ -388,7 +390,7 @@ pub async fn handle_methods_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     let title = apply_ice_gradient("Attack Methods");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let l4_methods = [
         ("UDP", "UDP Flood"),
@@ -441,7 +443,7 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     
     let title = apply_ice_gradient("RustNet Dashboard");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     // System Status
     let status = if bot_count > 0 && client_count > 0 { 
@@ -470,7 +472,7 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     // Active Attacks List
     let active_title = apply_ice_gradient("Active Attacks");
     client.write(format!("  {}\n\r", active_title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     if attacks.is_empty() {
         client.write(b"  \x1b[38;5;245mNo active attacks running\x1b[0m\n\r").await?;
@@ -503,7 +505,7 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     // User Activity
     let user_title = apply_ice_gradient("Your Activity");
     client.write(format!("  {}\n\r", user_title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let user_attacks_gradient = apply_gradient(&user_attacks.len().to_string(), 39, 51);
     client.write(format!("  \x1b[38;5;245mYour Active Attacks : \x1b[0m{}\n\r", user_attacks_gradient).as_bytes()).await?;
@@ -518,7 +520,7 @@ pub async fn handle_version_command(client: &Arc<Client>, _state: &Arc<AppState>
     
     let title = apply_ice_gradient("Server Version");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let version = apply_gradient(env!("CARGO_PKG_VERSION"), 39, 51);
     let author = apply_gradient("RustNet Team", 51, 87);
@@ -538,7 +540,7 @@ pub async fn handle_rules_command(client: &Arc<Client>, _state: &Arc<AppState>) 
     
     let title = apply_ice_gradient("Server Rules");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
-    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     
     let rules = [
         "Do not attack government websites",

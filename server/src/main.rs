@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!("🦀 RustNet CnC Server v2.0 - Production Ready");
+    info!("🦀 RustNet CnC Server v2.0 - Production Ready (Config Update)");
     info!("========================================");
     
     // Determine config directory

@@ -9,6 +9,11 @@ pub async fn get_terminal_width(state: &Arc<AppState>) -> usize {
     state.config.read().await.terminal_width
 }
 
+/// Get terminal height (default to 32)
+pub async fn get_terminal_height(state: &Arc<AppState>) -> usize {
+    state.config.read().await.terminal_height
+}
+
 /// Generate color gradient for string based on position
 pub fn apply_gradient(text: &str, start_color: u8, end_color: u8) -> String {
     let len = text.chars().count();
@@ -44,6 +49,7 @@ pub fn apply_ice_gradient(text: &str) -> String {
 }
 
 /// Strip ANSI codes to get true text length
+#[allow(dead_code)]
 pub fn strip_ansi(text: &str) -> String {
     use std::sync::OnceLock;
     static ANSI_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -54,6 +60,7 @@ pub fn strip_ansi(text: &str) -> String {
 }
 
 /// Get visible length of text (excluding ANSI codes)
+#[allow(dead_code)]
 pub fn visible_len(text: &str) -> usize {
     strip_ansi(text).chars().count()
 }
