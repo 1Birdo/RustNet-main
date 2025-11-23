@@ -35,8 +35,28 @@ pub async fn init_database(database_url: &str) -> Result<DbPool> {
 }
 
 async fn run_migrations(pool: &DbPool) -> Result<()> {
+    // Create migrations table if it doesn't exist
     sqlx::query(
-        r#"
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )"
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
+
+    // Get current version
+    let current_version: i64 = sqlx::query_scalar("SELECT MAX(version) FROM schema_migrations")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(Some(0))
+        .unwrap_or(0);
+
+    // Define migrations
+    let migrations = vec![
+        // Version 1: Initial Schema
+        (1, r#"
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
@@ -107,11 +127,48 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
         
         CREATE INDEX IF NOT EXISTS idx_rate_limits_ip ON rate_limits(ip);
         CREATE INDEX IF NOT EXISTS idx_rate_limits_time ON rate_limits(attempt_time);
-        "#
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
+
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            attempt_time DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_login_attempts_username ON login_attempts(username);
+        CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip_address);
+
+        CREATE TABLE IF NOT EXISTS pending_commands (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bot_id TEXT NOT NULL,
+            command TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_pending_commands_bot_id ON pending_commands(bot_id);
+        "#),
+        // Version 2: Add last_used to bot_tokens if missing (example of migration)
+        // In this case, we already defined it in V1, but this is how we'd add it.
+        // For now, V1 is the baseline.
+    ];
+
+    for (version, sql) in migrations {
+        if version > current_version {
+            tracing::info!("Applying migration version {}", version);
+            let mut tx = pool.begin().await.map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
+            
+            sqlx::query(sql)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
+                
+            sqlx::query("INSERT INTO schema_migrations (version) VALUES (?)")
+                .bind(version)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
+                
+            tx.commit().await.map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
+        }
+    }
 
     Ok(())
 }

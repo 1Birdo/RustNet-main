@@ -5,10 +5,6 @@ use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng}
 };
-use std::collections::HashMap;
-use std::time::Instant;
-use tokio::sync::Mutex;
-use std::sync::Arc;
 use sqlx::{SqlitePool, Row};
 
 /// Manages user authentication and storage
@@ -24,7 +20,13 @@ impl UserManager {
     }
 
     pub async fn get_all_users(&self) -> Result<Vec<User>> {
-        let users = sqlx::query("SELECT username, password_hash, role, expiry_date FROM users")
+        self.get_users_paginated(1000, 0).await
+    }
+
+    pub async fn get_users_paginated(&self, limit: i64, offset: i64) -> Result<Vec<User>> {
+        let users = sqlx::query("SELECT username, password_hash, role, expiry_date FROM users LIMIT ? OFFSET ?")
+            .bind(limit)
+            .bind(offset)
             .map(|row: sqlx::sqlite::SqliteRow| {
                 let role_str: String = row.get("role");
                 User {
@@ -111,7 +113,11 @@ impl UserManager {
         Ok(())
     }
 
-    pub async fn delete_user(&self, username: &str) -> Result<()> {
+    pub async fn delete_user(&self, username: &str, requester_username: &str) -> Result<()> {
+        if username == requester_username {
+            return Err(CncError::AuthFailed("Cannot delete your own account".to_string()));
+        }
+
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
             .fetch_one(&self.pool)
             .await?;
@@ -197,64 +203,95 @@ impl UserManager {
 
 /// Track login attempts to prevent brute force attacks
 pub struct LoginAttemptTracker {
-    attempts: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    pool: SqlitePool,
 }
 
 impl LoginAttemptTracker {
-    pub fn new() -> Self {
-        Self {
-            attempts: Arc::new(Mutex::new(HashMap::new())),
-        }
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
     }
     
-    /// Record a failed login attempt for a username
-    pub async fn record_failed_attempt(&self, username: &str) {
-        let mut attempts = self.attempts.lock().await;
-        attempts.entry(username.to_lowercase())
-            .or_insert_with(Vec::new)
-            .push(Instant::now());
+    /// Record a failed login attempt for a username and IP
+    pub async fn record_failed_attempt(&self, username: &str, ip_address: &str) {
+        let _ = sqlx::query("INSERT INTO login_attempts (username, ip_address, attempt_time) VALUES (?, ?, ?)")
+            .bind(username)
+            .bind(ip_address)
+            .bind(Utc::now())
+            .execute(&self.pool)
+            .await;
     }
     
-    /// Check if a username is currently locked out
+    /// Check if a username or IP is currently locked out
     /// Returns true if 5+ failed attempts in last 5 minutes
-    pub async fn is_locked_out(&self, username: &str) -> bool {
-        let attempts = self.attempts.lock().await;
-        if let Some(times) = attempts.get(&username.to_lowercase()) {
-            let recent = times.iter()
-                .filter(|t| t.elapsed().as_secs() < 300)  // 5 minutes
-                .count();
-            recent >= 5
-        } else {
-            false
-        }
+    pub async fn is_locked_out(&self, username: &str, ip_address: &str) -> bool {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM login_attempts WHERE (username = ? OR ip_address = ?) AND attempt_time > ?"
+        )
+        .bind(username)
+        .bind(ip_address)
+        .bind(Utc::now() - chrono::Duration::minutes(5))
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+        
+        count >= 5
     }
     
-    /// Clear attempts for a username (after successful login)
-    pub async fn clear_attempts(&self, username: &str) {
-        self.attempts.lock().await.remove(&username.to_lowercase());
+    /// Clear attempts for a username and IP (after successful login)
+    pub async fn clear_attempts(&self, username: &str, ip_address: &str) {
+        let _ = sqlx::query("DELETE FROM login_attempts WHERE username = ? OR ip_address = ?")
+            .bind(username)
+            .bind(ip_address)
+            .execute(&self.pool)
+            .await;
     }
     
     /// Get remaining lockout time in seconds
-    pub async fn get_lockout_remaining(&self, username: &str) -> u64 {
-        let attempts = self.attempts.lock().await;
-        if let Some(times) = attempts.get(&username.to_lowercase()) {
-            if let Some(oldest_recent) = times.iter()
-                .filter(|t| t.elapsed().as_secs() < 300)
-                .min_by_key(|t| t.elapsed())
-            {
-                return 300u64.saturating_sub(oldest_recent.elapsed().as_secs());
+    pub async fn get_lockout_remaining(&self, username: &str, ip_address: &str) -> u64 {
+        // Find the oldest attempt within the last 5 minutes that contributes to the lockout
+        // Actually, we just need to know when the lockout expires.
+        // If we have >= 5 attempts, the lockout expires 5 minutes after the *first* of those 5 attempts?
+        // Or 5 minutes after the *last* attempt?
+        // Usually it's a sliding window. If you have 5 attempts in the last 5 minutes, you are locked out.
+        // You become unlocked when the 5th-to-last attempt is older than 5 minutes.
+        
+        // Let's get the timestamp of the 5th most recent attempt.
+        // If we have fewer than 5, we are not locked out (return 0).
+        
+        let attempts: Vec<DateTime<Utc>> = sqlx::query_scalar(
+            "SELECT attempt_time FROM login_attempts WHERE (username = ? OR ip_address = ?) AND attempt_time > ? ORDER BY attempt_time DESC LIMIT 5"
+        )
+        .bind(username)
+        .bind(ip_address)
+        .bind(Utc::now() - chrono::Duration::minutes(5))
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default();
+
+        if attempts.len() >= 5 {
+            // The 5th most recent attempt (index 4) determines the start of the window that locks us out.
+            // Wait, if I have 5 attempts at T, T+1, T+2, T+3, T+4.
+            // I am locked out until T + 5min.
+            // Because at T + 5min + epsilon, the attempt at T falls out of the window, and I have 4 attempts.
+            
+            let oldest_relevant_attempt = attempts[4]; // The 5th one
+            let unlock_time = oldest_relevant_attempt + chrono::Duration::minutes(5);
+            let now = Utc::now();
+            
+            if unlock_time > now {
+                return (unlock_time - now).num_seconds() as u64;
             }
         }
+        
         0
     }
     
     /// Cleanup old attempts (call periodically)
     pub async fn cleanup_old_attempts(&self) {
-        let mut attempts = self.attempts.lock().await;
-        for (_, times) in attempts.iter_mut() {
-            times.retain(|t| t.elapsed().as_secs() < 300);
-        }
-        attempts.retain(|_, times| !times.is_empty());
+        let _ = sqlx::query("DELETE FROM login_attempts WHERE attempt_time < ?")
+            .bind(Utc::now() - chrono::Duration::minutes(5))
+            .execute(&self.pool)
+            .await;
     }
 }
 

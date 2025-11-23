@@ -63,6 +63,9 @@ pub struct Config {
 
     #[serde(default = "default_rate_limit_per_minute")]
     pub rate_limit_per_minute: u32,
+
+    #[serde(default = "default_terminal_width")]
+    pub terminal_width: usize,
 }
 
 fn default_user_server_ip() -> String { "0.0.0.0".to_string() }
@@ -85,6 +88,7 @@ fn default_handshake_timeout_secs() -> u64 { 10 }
 fn default_bot_auth_timeout_secs() -> u64 { 5 }
 fn default_strict_tls() -> bool { false }
 fn default_rate_limit_per_minute() -> u32 { 10 }
+fn default_terminal_width() -> usize { 95 }
 
 impl Default for Config {
     fn default() -> Self {
@@ -109,6 +113,7 @@ impl Default for Config {
             bot_auth_timeout_secs: default_bot_auth_timeout_secs(),
             strict_tls: default_strict_tls(),
             rate_limit_per_minute: default_rate_limit_per_minute(),
+            terminal_width: default_terminal_width(),
         }
     }
 }
@@ -184,6 +189,9 @@ impl Config {
         if let Some(strict) = server_section.get("strict_tls").and_then(|v| v.as_bool()) {
             config.strict_tls = strict;
         }
+        if let Some(width) = server_section.get("terminal_width").and_then(|v| v.as_integer()) {
+            config.terminal_width = width as usize;
+        }
         
         // Parse limits section if it exists
         if let Some(limits) = limits_section {
@@ -204,6 +212,9 @@ impl Config {
             }
             if let Some(timeout) = limits.get("bot_auth_timeout_secs").and_then(|v| v.as_integer()) {
                 config.bot_auth_timeout_secs = timeout as u64;
+            }
+            if let Some(rate) = limits.get("rate_limit_per_minute").and_then(|v| v.as_integer()) {
+                config.rate_limit_per_minute = rate as u32;
             }
         }
         
@@ -269,6 +280,14 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(default_strict_tls),
+            rate_limit_per_minute: env::var("RATE_LIMIT_PER_MINUTE")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(default_rate_limit_per_minute),
+            terminal_width: env::var("TERMINAL_WIDTH")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(default_terminal_width),
         }
     }
     
@@ -306,6 +325,9 @@ impl Config {
         }
 
         if !self.enable_tls {
+            if self.deployment_mode == "public" {
+                return Err("TLS is required for public deployment mode.".to_string());
+            }
             tracing::warn!("TLS is disabled. This is not recommended for production.");
         }
         
@@ -347,6 +369,7 @@ impl Config {
             max_attack_duration_secs: u64,
             handshake_timeout_secs: u64,
             bot_auth_timeout_secs: u64,
+            rate_limit_per_minute: u32,
         }
         
         #[derive(Serialize)]
@@ -373,6 +396,7 @@ impl Config {
                 max_attack_duration_secs: self.max_attack_duration_secs,
                 handshake_timeout_secs: self.handshake_timeout_secs,
                 bot_auth_timeout_secs: self.bot_auth_timeout_secs,
+                rate_limit_per_minute: self.rate_limit_per_minute,
             },
         };
         
