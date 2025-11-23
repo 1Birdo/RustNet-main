@@ -564,7 +564,7 @@ pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>
     let lines = [
         format!("  Total Bots: {}", apply_gradient(&bot_count.to_string(), 39, 51)),
         format!("  Status:     {}", apply_gradient("Online", 82, 118)),
-        format!("  Server:     {}", apply_gradient(&format!("{}:{}", state.config.bot_server_ip, state.config.bot_server_port), 39, 51))
+        format!("  Server:     {}", apply_gradient(&format!("{}:{}", state.config.read().await.bot_server_ip, state.config.read().await.bot_server_port), 39, 51))
     ];
     
     for (i, line) in lines.iter().enumerate() {

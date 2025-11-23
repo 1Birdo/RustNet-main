@@ -107,7 +107,7 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
     } else {
         let mut conn = BufReader::new(conn);
         // Enforce TLS if configured
-        if state.config.enable_tls {
+        if state.config.read().await.enable_tls {
              // If TLS is enabled but we are here, it means state.tls_acceptor is None which shouldn't happen if config.enable_tls is true
              // unless setup failed. But main.rs handles that.
         } else {

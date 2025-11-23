@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::RwLock;
 use tokio_rustls::TlsAcceptor;
 use dashmap::DashSet;
 use std::net::IpAddr;
@@ -11,7 +12,7 @@ use super::attack_manager::AttackManager;
 use super::rate_limiter::SimpleRateLimiter;
 
 pub struct AppState {
-    pub config: Config,
+    pub config: RwLock<Config>,
     pub bot_manager: Arc<BotManager>,
     pub client_manager: Arc<ClientManager>,
     pub attack_manager: Arc<AttackManager>,
@@ -38,7 +39,7 @@ impl AppState {
         login_tracker: Arc<LoginAttemptTracker>,
     ) -> Self {
         Self {
-            config,
+            config: RwLock::new(config),
             bot_manager,
             client_manager,
             attack_manager,

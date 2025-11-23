@@ -261,4 +261,66 @@ impl Config {
         
         Ok(())
     }
+
+    pub fn save(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Prefer saving to server.toml
+        let path = "config/server.toml";
+        
+        // Create config directory if it doesn't exist
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // We need to serialize to TOML. 
+        // Since our Config struct is flat but the TOML has sections (server, limits),
+        // we should reconstruct the structure or just save as flat TOML if the parser supports it.
+        // However, the parser expects specific sections.
+        // Let's create a helper struct for serialization that matches the TOML structure.
+        
+        #[derive(Serialize)]
+        struct ServerConfig<'a> {
+            user_port: u16,
+            bot_port: u16,
+            enable_tls: bool,
+            cert_path: &'a str,
+            key_path: &'a str,
+            deployment_mode: &'a str,
+        }
+        
+        #[derive(Serialize)]
+        struct LimitsConfig {
+            max_bots: usize,
+            session_timeout_secs: u64,
+            attack_cooldown_secs: u64,
+            max_attack_duration_secs: u64,
+        }
+        
+        #[derive(Serialize)]
+        struct TomlConfig<'a> {
+            server: ServerConfig<'a>,
+            limits: LimitsConfig,
+        }
+        
+        let toml_config = TomlConfig {
+            server: ServerConfig {
+                user_port: self.user_server_port,
+                bot_port: self.bot_server_port,
+                enable_tls: self.enable_tls,
+                cert_path: &self.cert_path,
+                key_path: &self.key_path,
+                deployment_mode: &self.deployment_mode,
+            },
+            limits: LimitsConfig {
+                max_bots: self.max_bot_connections,
+                session_timeout_secs: self.session_timeout_secs,
+                attack_cooldown_secs: self.attack_cooldown_secs,
+                max_attack_duration_secs: self.max_attack_duration_secs,
+            },
+        };
+        
+        let toml_string = toml::to_string_pretty(&toml_config)?;
+        std::fs::write(path, toml_string)?;
+        
+        Ok(())
+    }
 }

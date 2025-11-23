@@ -358,7 +358,7 @@ async fn periodic_cleanup(state: Arc<AppState>) {
         state.bot_manager.cleanup_dead_bots(BOT_TIMEOUT_SECS).await;
         
         // Cleanup inactive client sessions
-        state.client_manager.cleanup_inactive(state.config.session_timeout_secs).await;
+        state.client_manager.cleanup_inactive(state.config.read().await.session_timeout_secs).await;
         
         // Cleanup old rate limit entries
         state.rate_limiter.cleanup_old_entries().await;
@@ -391,7 +391,7 @@ async fn update_titles(state: Arc<AppState>) {
                 spin_chars[spin_index],
                 bot_count,
                 attack_count,
-                state.config.max_attacks,
+                state.config.read().await.max_attacks,
                 client.user.username,
                 client.user.get_level().to_str(),
                 spin_chars[spin_index]
