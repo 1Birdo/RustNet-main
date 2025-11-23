@@ -439,6 +439,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
                     Some(cmd) => {
                         if writer.write_all(cmd.as_bytes()).await.is_err() {
                             info!("Bot {} disconnected (write failed)", bot_id);
+                            bot_manager.set_bot_error(&bot_id, "Write failed".to_string()).await;
                             break;
                         }
                     }
@@ -454,6 +455,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
             _ = interval.tick() => {
                 if writer.write_all(b"PING\n").await.is_err() {
                     info!("Bot {} disconnected (ping failed)", bot_id);
+                    bot_manager.set_bot_error(&bot_id, "Ping failed".to_string()).await;
                     break;
                 }
             }
@@ -471,10 +473,12 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
                     Ok(_) => {
                         // EOF
                         info!("Bot {} disconnected (EOF)", bot_id);
+                        bot_manager.set_bot_error(&bot_id, "EOF".to_string()).await;
                         break;
                     }
                     Err(e) => {
                         info!("Bot {} disconnected (read error: {})", bot_id, e);
+                        bot_manager.set_bot_error(&bot_id, format!("Read error: {}", e)).await;
                         break;
                     }
                 }

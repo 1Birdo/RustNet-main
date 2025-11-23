@@ -81,7 +81,8 @@ pub const OWNER_COMMANDS: &[MenuItem] = &[
     MenuItem { cmd: "❃. unban", desc: "✪. listbots" },
     MenuItem { cmd: "✪. userchange", desc: "❃. backup" },
     MenuItem { cmd: "❃. db", desc: "✪. restore" },
-    MenuItem { cmd: "✪. config", desc: "" },
+    MenuItem { cmd: "✪. config", desc: "❃. tokens" },
+    MenuItem { cmd: "❃. revoke", desc: "" },
 ];
 
 pub const ADMIN_PANEL: &[&str] = &[

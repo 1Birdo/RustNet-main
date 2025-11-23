@@ -190,6 +190,7 @@ async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
     // Setup TLS
     let config = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
         .with_safe_default_protocol_versions()?
+        .dangerous()
         .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
         .with_no_client_auth();
         

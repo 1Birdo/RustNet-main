@@ -440,6 +440,28 @@ impl Command for ConfigCommand {
     }
 }
 
+pub struct TokensCommand;
+#[async_trait]
+impl Command for TokensCommand {
+    fn name(&self) -> &'static str { "tokens" }
+    fn description(&self) -> &'static str { "List bot tokens" }
+    fn required_level(&self) -> Level { Level::Owner }
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
+        owner::handle_tokens_command(client, state).await
+    }
+}
+
+pub struct RevokeCommand;
+#[async_trait]
+impl Command for RevokeCommand {
+    fn name(&self) -> &'static str { "revoke" }
+    fn description(&self) -> &'static str { "Revoke bot token" }
+    fn required_level(&self) -> Level { Level::Owner }
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
+        owner::handle_revoke_command(client, state, &args).await
+    }
+}
+
 // --- Attack Commands ---
 
 pub struct AttackCommand;
@@ -541,6 +563,8 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(WhitelistCommand));
     registry.register(Box::new(BlacklistCommand));
     registry.register(Box::new(ConfigCommand));
+    registry.register(Box::new(TokensCommand));
+    registry.register(Box::new(RevokeCommand));
 
     // Attack
     registry.register(Box::new(AttackCommand));
