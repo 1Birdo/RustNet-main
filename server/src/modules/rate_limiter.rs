@@ -1,19 +1,17 @@
-use std::collections::HashMap;
 use std::net::IpAddr;
-use tokio::time::Instant;
-use tokio::sync::Mutex;
-use std::sync::Arc;
+use chrono::{Utc, Duration};
+use sqlx::SqlitePool;
 
-/// Simple rate limiter for IP-based connection limiting
+/// Persistent rate limiter using SQLite
 pub struct SimpleRateLimiter {
-    attempts: Arc<Mutex<HashMap<IpAddr, Vec<Instant>>>>,
+    pool: SqlitePool,
     max_per_minute: usize,
 }
 
 impl SimpleRateLimiter {
-    pub fn new(max_per_minute: usize) -> Self {
+    pub fn new(pool: SqlitePool, max_per_minute: usize) -> Self {
         Self {
-            attempts: Arc::new(Mutex::new(HashMap::new())),
+            pool,
             max_per_minute,
         }
     }
@@ -21,33 +19,45 @@ impl SimpleRateLimiter {
     /// Check if the IP is within rate limit
     /// Returns true if allowed, false if rate limited
     pub async fn check_rate_limit(&self, ip: IpAddr) -> bool {
-        let mut attempts = self.attempts.lock().await;
-        let now = Instant::now();
+        let ip_str = ip.to_string();
+        let now = Utc::now();
+        let one_minute_ago = now - Duration::seconds(60);
         
-        // Get attempts for this IP
-        let ip_attempts = attempts.entry(ip).or_insert_with(Vec::new);
+        // Count attempts in the last minute
+        let count: i64 = match sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rate_limits WHERE ip = ? AND attempt_time > ?"
+        )
+        .bind(&ip_str)
+        .bind(one_minute_ago)
+        .fetch_one(&self.pool)
+        .await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Rate limiter DB error: {}", e);
+                return true; // Fail open if DB error
+            }
+        };
         
-        // Remove attempts older than 1 minute
-        ip_attempts.retain(|&time| now.duration_since(time).as_secs() < 60);
-        
-        // Check if under limit
-        if ip_attempts.len() >= self.max_per_minute {
-            return false;  // Rate limited
+        if count >= self.max_per_minute as i64 {
+            return false;
         }
         
         // Record this attempt
-        ip_attempts.push(now);
+        let _ = sqlx::query("INSERT INTO rate_limits (ip, attempt_time) VALUES (?, ?)")
+            .bind(&ip_str)
+            .bind(now)
+            .execute(&self.pool)
+            .await;
+            
         true
     }
     
     /// Cleanup old entries (should be called periodically)
     pub async fn cleanup_old_entries(&self) {
-        let mut attempts = self.attempts.lock().await;
-        let now = Instant::now();
-        
-        // Remove IPs with no recent attempts (> 5 minutes)
-        attempts.retain(|_, times| {
-            times.iter().any(|&t| now.duration_since(t).as_secs() < 300)
-        });
+        let one_hour_ago = Utc::now() - Duration::hours(1);
+        let _ = sqlx::query("DELETE FROM rate_limits WHERE attempt_time < ?")
+            .bind(one_hour_ago)
+            .execute(&self.pool)
+            .await;
     }
 }

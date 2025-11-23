@@ -11,11 +11,13 @@ pub async fn init_database(database_url: &str) -> Result<DbPool> {
         fs::create_dir_all(parent).await?;
     }
 
-    let pool = SqlitePoolOptions::new()
+    let pool = match SqlitePoolOptions::new()
         .max_connections(5)
         .connect(database_url)
-        .await
-        .or_else(|_| async {
+        .await 
+    {
+        Ok(p) => p,
+        Err(_) => {
             // If connection fails, try creating the file first
             let path = database_url.trim_start_matches("sqlite:");
             fs::File::create(path).await?;
@@ -23,8 +25,9 @@ pub async fn init_database(database_url: &str) -> Result<DbPool> {
                 .max_connections(5)
                 .connect(database_url)
                 .await
-        })
-        .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
+                .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?
+        }
+    };
 
     run_migrations(&pool).await?;
 
@@ -46,7 +49,7 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
         CREATE TABLE IF NOT EXISTS bot_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             token_hash TEXT NOT NULL UNIQUE,
-            bot_uuid TEXT NOT NULL,
+            bot_id TEXT NOT NULL,
             arch TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_used_at DATETIME
@@ -84,6 +87,26 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
             ram_usage REAL,
             last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS blacklist (
+            ip TEXT PRIMARY KEY,
+            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            reason TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS whitelist (
+            ip TEXT PRIMARY KEY,
+            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            description TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS rate_limits (
+            ip TEXT NOT NULL,
+            attempt_time DATETIME NOT NULL
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_rate_limits_ip ON rate_limits(ip);
+        CREATE INDEX IF NOT EXISTS idx_rate_limits_time ON rate_limits(attempt_time);
         "#
     )
     .execute(pool)

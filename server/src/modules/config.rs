@@ -48,6 +48,18 @@ pub struct Config {
     
     #[serde(default = "default_max_attack_duration_secs")]
     pub max_attack_duration_secs: u64,
+
+    #[serde(default = "default_login_magic_string")]
+    pub login_magic_string: String,
+
+    #[serde(default = "default_handshake_timeout_secs")]
+    pub handshake_timeout_secs: u64,
+
+    #[serde(default = "default_bot_auth_timeout_secs")]
+    pub bot_auth_timeout_secs: u64,
+
+    #[serde(default = "default_strict_tls")]
+    pub strict_tls: bool,
 }
 
 fn default_user_server_ip() -> String { "0.0.0.0".to_string() }
@@ -65,6 +77,10 @@ fn default_log_level() -> String { "info".to_string() }
 fn default_deployment_mode() -> String { "local".to_string() }
 fn default_attack_cooldown_secs() -> u64 { 60 }  // 1 minute cooldown
 fn default_max_attack_duration_secs() -> u64 { 300 } // 5 minutes
+fn default_login_magic_string() -> String { "loginforme".to_string() }
+fn default_handshake_timeout_secs() -> u64 { 10 }
+fn default_bot_auth_timeout_secs() -> u64 { 5 }
+fn default_strict_tls() -> bool { false }
 
 impl Default for Config {
     fn default() -> Self {
@@ -84,6 +100,10 @@ impl Default for Config {
             deployment_mode: default_deployment_mode(),
             attack_cooldown_secs: default_attack_cooldown_secs(),
             max_attack_duration_secs: default_max_attack_duration_secs(),
+            login_magic_string: default_login_magic_string(),
+            handshake_timeout_secs: default_handshake_timeout_secs(),
+            bot_auth_timeout_secs: default_bot_auth_timeout_secs(),
+            strict_tls: default_strict_tls(),
         }
     }
 }
@@ -153,6 +173,12 @@ impl Config {
         if let Some(mode) = server_section.get("deployment_mode").and_then(|v| v.as_str()) {
             config.deployment_mode = mode.to_string();
         }
+        if let Some(magic) = server_section.get("login_magic_string").and_then(|v| v.as_str()) {
+            config.login_magic_string = magic.to_string();
+        }
+        if let Some(strict) = server_section.get("strict_tls").and_then(|v| v.as_bool()) {
+            config.strict_tls = strict;
+        }
         
         // Parse limits section if it exists
         if let Some(limits) = limits_section {
@@ -167,6 +193,12 @@ impl Config {
             }
             if let Some(duration) = limits.get("max_attack_duration_secs").and_then(|v| v.as_integer()) {
                 config.max_attack_duration_secs = duration as u64;
+            }
+            if let Some(timeout) = limits.get("handshake_timeout_secs").and_then(|v| v.as_integer()) {
+                config.handshake_timeout_secs = timeout as u64;
+            }
+            if let Some(timeout) = limits.get("bot_auth_timeout_secs").and_then(|v| v.as_integer()) {
+                config.bot_auth_timeout_secs = timeout as u64;
             }
         }
         
@@ -219,6 +251,19 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(default_max_attack_duration_secs),
+            login_magic_string: env::var("LOGIN_MAGIC_STRING").unwrap_or_else(|_| default_login_magic_string()),
+            handshake_timeout_secs: env::var("HANDSHAKE_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(default_handshake_timeout_secs),
+            bot_auth_timeout_secs: env::var("BOT_AUTH_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(default_bot_auth_timeout_secs),
+            strict_tls: env::var("STRICT_TLS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(default_strict_tls),
         }
     }
     
@@ -285,6 +330,8 @@ impl Config {
             cert_path: &'a str,
             key_path: &'a str,
             deployment_mode: &'a str,
+            login_magic_string: &'a str,
+            strict_tls: bool,
         }
         
         #[derive(Serialize)]
@@ -293,6 +340,8 @@ impl Config {
             session_timeout_secs: u64,
             attack_cooldown_secs: u64,
             max_attack_duration_secs: u64,
+            handshake_timeout_secs: u64,
+            bot_auth_timeout_secs: u64,
         }
         
         #[derive(Serialize)]
@@ -309,12 +358,16 @@ impl Config {
                 cert_path: &self.cert_path,
                 key_path: &self.key_path,
                 deployment_mode: &self.deployment_mode,
+                login_magic_string: &self.login_magic_string,
+                strict_tls: self.strict_tls,
             },
             limits: LimitsConfig {
                 max_bots: self.max_bot_connections,
                 session_timeout_secs: self.session_timeout_secs,
                 attack_cooldown_secs: self.attack_cooldown_secs,
                 max_attack_duration_secs: self.max_attack_duration_secs,
+                handshake_timeout_secs: self.handshake_timeout_secs,
+                bot_auth_timeout_secs: self.bot_auth_timeout_secs,
             },
         };
         

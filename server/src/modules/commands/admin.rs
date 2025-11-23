@@ -1,6 +1,4 @@
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
-use tokio::fs::File;
 use crate::modules::client_manager::Client;
 use crate::modules::state::AppState;
 use crate::modules::error::{Result, AuditLog, log_audit_event};
@@ -171,7 +169,7 @@ pub async fn handle_ban_command(client: &Arc<Client>, state: &Arc<AppState>) -> 
         return Ok(());
     }
     
-    if let Some(user) = state.user_manager.get_user(&username).await {
+    if let Ok(Some(user)) = state.user_manager.get_user(&username).await {
         if user.get_level() == Level::Owner {
             client.write(b"\x1b[38;5;196m[X] You cannot ban the owner\n\r").await?;
             return Ok(());
@@ -209,7 +207,7 @@ pub async fn handle_unban_command(client: &Arc<Client>, state: &Arc<AppState>) -
         return Ok(());
     }
     
-    if let Some(_) = state.user_manager.get_user(&username).await {
+    if let Ok(Some(_)) = state.user_manager.get_user(&username).await {
         // Set expiry to 30 days from now
         let expire = chrono::Utc::now() + chrono::Duration::days(30);
         state.user_manager.update_user(&username, None, Some(expire)).await?;
@@ -226,7 +224,7 @@ pub async fn handle_unban_command(client: &Arc<Client>, state: &Arc<AppState>) -
 }
 
 pub async fn handle_banlist_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
-    let users = state.user_manager.get_all_users().await;
+    let users = state.user_manager.get_all_users().await.unwrap_or_default();
     
     let now = chrono::Utc::now();
     let banned: Vec<&User> = users.iter().filter(|u| u.expire < now).collect();
@@ -459,7 +457,7 @@ pub async fn handle_userinfo_command(client: &Arc<Client>, state: &Arc<AppState>
         }
     };
     
-    if let Some(user) = state.user_manager.get_user(&username).await {
+    if let Ok(Some(user)) = state.user_manager.get_user(&username).await {
         client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
         
         let width = get_terminal_width();
@@ -520,7 +518,7 @@ pub async fn handle_lock_command(client: &Arc<Client>, state: &Arc<AppState>, pa
         }
     };
     
-    if let Some(_) = state.user_manager.get_user(&username).await {
+    if let Ok(Some(_)) = state.user_manager.get_user(&username).await {
         let expire = chrono::Utc::now() - chrono::Duration::days(1);
         state.user_manager.update_user(&username, None, Some(expire)).await?;
         
@@ -580,7 +578,7 @@ pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>
 }
 
 pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
-    let users = state.user_manager.get_all_users().await;
+    let users = state.user_manager.get_all_users().await.unwrap_or_default();
     
     let mut table = TableBuilder::new("User List");
     

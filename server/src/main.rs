@@ -84,10 +84,7 @@ async fn main() -> Result<()> {
     // Determine config directory
     let config_dir = get_config_dir();
     let bot_tokens_file = config_dir.join("bot_tokens.json");
-    let bot_tokens_file_str = bot_tokens_file.to_string_lossy().to_string();
-    
     info!("📁 Config directory: {}", config_dir.display());
-    info!("🤖 Bot tokens file: {}", bot_tokens_file.display());
     
     // Validate configuration
     if let Err(e) = config.validate() {
@@ -159,7 +156,7 @@ async fn main() -> Result<()> {
         Arc::new(BotManager::new(config.max_bot_connections, db_pool.clone())),
         Arc::new(ClientManager::new(config.max_user_connections)),
         Arc::new(AttackManager::new(config.max_attacks, config.attack_cooldown_secs, config.max_attack_duration_secs, db_pool.clone())),
-        Arc::new(SimpleRateLimiter::new(10)),  // 10 connections per minute per IP
+        Arc::new(SimpleRateLimiter::new(db_pool.clone(), 10)),  // 10 connections per minute per IP
         user_manager,
         tls_acceptor,
         db_pool.clone(),
