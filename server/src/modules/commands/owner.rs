@@ -144,8 +144,12 @@ pub async fn handle_restore_command(client: &Arc<Client>, state: &Arc<AppState>,
         }
     };
     
-    // Security check: Prevent path traversal
-    if backup_name.contains("..") || backup_name.contains('/') || backup_name.contains('\\') {
+    // Security check: Prevent path traversal and ensure valid filename
+    let path = std::path::Path::new(&backup_name);
+    if path.components().count() != 1 || 
+       backup_name.contains("..") || 
+       backup_name.contains('/') || 
+       backup_name.contains('\\') {
         client.write(b"\x1b[38;5;196m[X] Invalid backup name (path traversal detected)\n\r").await?;
         return Ok(());
     }
@@ -156,15 +160,49 @@ pub async fn handle_restore_command(client: &Arc<Client>, state: &Arc<AppState>,
         return Ok(());
     }
     
-    let backup_path = format!("backups/{}", backup_name);
-    if tokio::fs::try_exists(&backup_path).await? {
-        // Execute restore script with piped input "yes"
-        let mut child = Command::new("./restore.sh")
-            .arg(&backup_path)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
+    let backup_path = std::path::Path::new("backups").join(&backup_name);
+    
+    // Verify the file exists and is a file (not a symlink/dir)
+    if !backup_path.exists() || !backup_path.is_file() {
+        client.write(format!("\x1b[38;5;196m[X] Backup '{}' not found or invalid\n\r", backup_name).as_bytes()).await?;
+        return Ok(());
+    }
+
+    // Canonicalize to ensure it's truly inside backups/
+    let canonical_path = match backup_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            client.write(b"\x1b[38;5;196m[X] Failed to resolve backup path\n\r").await?;
+            return Ok(());
+        }
+    };
+    
+    let backups_dir = match std::path::Path::new("backups").canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            // If backups dir doesn't exist, we can't restore from it
+             client.write(b"\x1b[38;5;196m[X] Backups directory error\n\r").await?;
+             return Ok(());
+        }
+    };
+    
+    if !canonical_path.starts_with(&backups_dir) {
+        client.write(b"\x1b[38;5;196m[X] Security violation: Path traversal detected\n\r").await?;
+        return Ok(());
+    }
+    
+    // Execute restore script with piped input "yes"
+    // Use the filename only, as the script expects it relative or we pass the full path?
+    // The original code passed `backups/backup_name`.
+    // Let's pass the relative path `backups/filename` which we know is safe now.
+    let safe_path_str = format!("backups/{}", backup_name);
+
+    let mut child = Command::new("./restore.sh")
+        .arg(&safe_path_str)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
             
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(b"yes\n").await?;

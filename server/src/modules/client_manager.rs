@@ -1,5 +1,5 @@
 use tokio::net::TcpStream;
-use tokio::io::{AsyncWriteExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncWriteExt, AsyncReadExt, BufReader, AsyncBufReadExt};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -26,6 +26,41 @@ impl Connection {
         match self {
             Connection::Plain(stream) => stream.read(buf).await,
             Connection::Tls(stream) => stream.read(buf).await,
+        }
+    }
+
+    async fn read_line_limited(&mut self, line: &mut String, limit: usize) -> std::io::Result<usize> {
+        match self {
+            Connection::Plain(stream) => read_line_safe(stream, line, limit).await,
+            Connection::Tls(stream) => read_line_safe(stream, line, limit).await,
+        }
+    }
+}
+
+async fn read_line_safe<R: AsyncBufReadExt + Unpin>(reader: &mut R, line: &mut String, limit: usize) -> std::io::Result<usize> {
+    let mut total_read = 0;
+    loop {
+        let available = reader.fill_buf().await?;
+        let len = available.len();
+        if len == 0 {
+            return Ok(total_read);
+        }
+        
+        let (found_newline, bytes_to_consume) = match available.iter().position(|&b| b == b'\n') {
+            Some(pos) => (true, pos + 1),
+            None => (false, len),
+        };
+        
+        if line.len() + bytes_to_consume > limit {
+             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Line too long"));
+        }
+        
+        line.push_str(&String::from_utf8_lossy(&available[..bytes_to_consume]));
+        reader.consume(bytes_to_consume);
+        total_read += bytes_to_consume;
+        
+        if found_newline {
+            return Ok(total_read);
         }
     }
 }
@@ -95,34 +130,18 @@ impl Client {
     pub async fn read_line(&self) -> Result<String> {
         let mut conn = self.conn.lock().await;
         let mut line = String::new();
-        let mut buffer = [0u8; 1];
         
         // Limit max line length to prevent memory exhaustion (e.g. 4KB)
         const MAX_LINE_LENGTH: usize = 4096;
         
-        loop {
-            let n = conn.read(&mut buffer).await?;
-            if n == 0 {
-                return Err(CncError::ConnectionClosed);
-            }
-            
-            let ch = buffer[0] as char;
-            if ch == '\n' {
-                break;
-            }
-            if ch != '\r' {
-                if line.len() >= MAX_LINE_LENGTH {
-                    return Err(CncError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput, 
-                        "Line too long"
-                    )));
-                }
-                line.push(ch);
-            }
+        match conn.read_line_limited(&mut line, MAX_LINE_LENGTH).await {
+            Ok(0) => return Err(CncError::ConnectionClosed),
+            Ok(_) => {
+                self.update_activity().await;
+                Ok(line)
+            },
+            Err(e) => Err(CncError::IoError(e)),
         }
-        
-        self.update_activity().await;
-        Ok(line)
     }
     
     async fn update_activity(&self) {

