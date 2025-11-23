@@ -18,8 +18,11 @@ mod modules {
 use tokio::net::TcpListener;
 use std::sync::Arc;
 use std::time::Duration;
+use std::net::IpAddr;
 use tracing::{info, warn, error, debug};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use dashmap::DashSet;
+use sqlx::{SqlitePool, Row};
 
 use modules::auth::{Level, random_string, set_title, LoginAttemptTracker, UserManager};
 use modules::database::init_database;
@@ -102,7 +105,7 @@ async fn main() -> Result<()> {
     // Setup TLS if enabled
     let tls_acceptor = if config.enable_tls {
         info!("Setting up TLS encryption...");
-        match setup_tls(&config.cert_path, &config.key_path).await {
+        match setup_tls(&config.cert_path, &config.key_path, config.strict_tls).await {
             Ok(acceptor) => {
                 info!("[OK] TLS encryption enabled");
                 Some(Arc::new(acceptor))
@@ -150,6 +153,11 @@ async fn main() -> Result<()> {
         }
     }
     
+    // Load blacklist and whitelist
+    let blacklist = load_ip_list(&db_pool, "blacklist").await;
+    let whitelist = load_ip_list(&db_pool, "whitelist").await;
+    info!("Loaded {} blacklisted IPs and {} whitelisted IPs", blacklist.len(), whitelist.len());
+
     // Initialize managers
     let state = Arc::new(AppState::new(
         config.clone(),
@@ -161,6 +169,8 @@ async fn main() -> Result<()> {
         tls_acceptor,
         db_pool.clone(),
         Arc::new(LoginAttemptTracker::new()),
+        whitelist,
+        blacklist,
     ));
 
     // Initialize Command Registry
@@ -354,4 +364,18 @@ async fn update_titles(state: Arc<AppState>) {
         
         spin_index = (spin_index + 1) % spin_chars.len();
     }
+}
+
+async fn load_ip_list(pool: &SqlitePool, table: &str) -> DashSet<IpAddr> {
+    let set = DashSet::new();
+    let query = format!("SELECT ip FROM {}", table);
+    let rows = sqlx::query(&query).fetch_all(pool).await.unwrap_or_default();
+    for row in rows {
+        if let Ok(ip_str) = row.try_get::<String, _>("ip") {
+            if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                set.insert(ip);
+            }
+        }
+    }
+    set
 }

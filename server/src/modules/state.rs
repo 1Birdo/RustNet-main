@@ -38,6 +38,8 @@ impl AppState {
         tls_acceptor: Option<Arc<TlsAcceptor>>,
         pool: SqlitePool,
         login_tracker: Arc<LoginAttemptTracker>,
+        whitelist: DashSet<IpAddr>,
+        blacklist: DashSet<IpAddr>,
     ) -> Self {
         Self {
             config: RwLock::new(config),
@@ -50,8 +52,8 @@ impl AppState {
             tls_acceptor,
             pool,
             login_tracker,
-            whitelist: Arc::new(DashSet::new()),
-            blacklist: Arc::new(DashSet::new()),
+            whitelist: Arc::new(whitelist),
+            blacklist: Arc::new(blacklist),
         }
     }
 }

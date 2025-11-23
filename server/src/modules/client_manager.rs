@@ -1,6 +1,6 @@
 use tokio::net::TcpStream;
-use tokio::io::{AsyncWriteExt, AsyncReadExt, BufReader, AsyncBufReadExt};
-use tokio::sync::Mutex;
+use tokio::io::{AsyncWriteExt, AsyncReadExt, BufReader, AsyncBufReadExt, AsyncBufRead, split};
+use tokio::sync::{Mutex, mpsc};
 use std::sync::Arc;
 use std::collections::HashMap;
 use super::auth::{User, Level};
@@ -9,65 +9,14 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use tokio_rustls::server::TlsStream;
 
-pub enum Connection {
-    Plain(BufReader<TcpStream>),
-    Tls(BufReader<TlsStream<TcpStream>>),
-}
-
-impl Connection {
-    async fn write_all(&mut self, data: &[u8]) -> std::io::Result<()> {
-        match self {
-            Connection::Plain(stream) => stream.write_all(data).await,
-            Connection::Tls(stream) => stream.write_all(data).await,
-        }
-    }
-    
-    async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            Connection::Plain(stream) => stream.read(buf).await,
-            Connection::Tls(stream) => stream.read(buf).await,
-        }
-    }
-
-    async fn read_line_limited(&mut self, line: &mut String, limit: usize) -> std::io::Result<usize> {
-        match self {
-            Connection::Plain(stream) => read_line_safe(stream, line, limit).await,
-            Connection::Tls(stream) => read_line_safe(stream, line, limit).await,
-        }
-    }
-}
-
-async fn read_line_safe<R: AsyncBufReadExt + Unpin>(reader: &mut R, line: &mut String, limit: usize) -> std::io::Result<usize> {
-    let mut total_read = 0;
-    loop {
-        let available = reader.fill_buf().await?;
-        let len = available.len();
-        if len == 0 {
-            return Ok(total_read);
-        }
-        
-        let (found_newline, bytes_to_consume) = match available.iter().position(|&b| b == b'\n') {
-            Some(pos) => (true, pos + 1),
-            None => (false, len),
-        };
-        
-        if line.len() + bytes_to_consume > limit {
-             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Line too long"));
-        }
-        
-        line.push_str(&String::from_utf8_lossy(&available[..bytes_to_consume]));
-        reader.consume(bytes_to_consume);
-        total_read += bytes_to_consume;
-        
-        if found_newline {
-            return Ok(total_read);
-        }
-    }
-}
+// Helper trait for Box<dyn ...>
+pub trait AsyncReadWrite: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> AsyncReadWrite for T {}
 
 pub struct Client {
     pub id: Uuid,
-    pub conn: Arc<Mutex<Connection>>,
+    reader: Arc<Mutex<Box<dyn AsyncBufRead + Unpin + Send>>>,
+    writer_tx: mpsc::Sender<Vec<u8>>,
     pub user: User,
     pub address: String,
     #[allow(dead_code)]
@@ -78,13 +27,29 @@ pub struct Client {
 
 impl Client {
     pub fn new(conn: BufReader<TcpStream>, user: User) -> Result<Self> {
-        let address = conn.get_ref().peer_addr()
+        let stream = conn.into_inner();
+        let address = stream.peer_addr()
             .map(|a| a.to_string())
             .unwrap_or_else(|_| "unknown".to_string());
         
+        let (read_half, mut write_half) = split(stream);
+        let reader = Box::new(BufReader::new(read_half));
+        
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(100);
+        
+        // Spawn writer task
+        tokio::spawn(async move {
+            while let Some(data) = rx.recv().await {
+                if let Err(_) = write_half.write_all(&data).await {
+                    break;
+                }
+            }
+        });
+        
         Ok(Self {
             id: Uuid::new_v4(),
-            conn: Arc::new(Mutex::new(Connection::Plain(conn))),
+            reader: Arc::new(Mutex::new(reader)),
+            writer_tx: tx,
             user,
             address,
             connected_at: Utc::now(),
@@ -94,13 +59,29 @@ impl Client {
     }
     
     pub fn new_from_tls(conn: BufReader<TlsStream<TcpStream>>, user: User) -> Result<Self> {
-        let address = conn.get_ref().get_ref().0.peer_addr()
+        let stream = conn.into_inner();
+        let address = stream.get_ref().0.peer_addr()
             .map(|a| a.to_string())
             .unwrap_or_else(|_| "unknown".to_string());
         
+        let (read_half, mut write_half) = split(stream);
+        let reader = Box::new(BufReader::new(read_half));
+        
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(100);
+        
+        // Spawn writer task
+        tokio::spawn(async move {
+            while let Some(data) = rx.recv().await {
+                if let Err(_) = write_half.write_all(&data).await {
+                    break;
+                }
+            }
+        });
+        
         Ok(Self {
             id: Uuid::new_v4(),
-            conn: Arc::new(Mutex::new(Connection::Tls(conn))),
+            reader: Arc::new(Mutex::new(reader)),
+            writer_tx: tx,
             user,
             address,
             connected_at: Utc::now(),
@@ -110,31 +91,29 @@ impl Client {
     }
     
     pub async fn write(&self, data: &[u8]) -> Result<()> {
-        let mut conn = self.conn.lock().await;
-        conn.write_all(data).await?;
+        self.writer_tx.send(data.to_vec()).await
+            .map_err(|_| CncError::ConnectionClosed)?;
         self.update_activity().await;
         Ok(())
     }
     
-    /// Try to write data without blocking if the connection is busy (e.g. reading input)
+    /// Try to write data without blocking (now just sends to channel)
     pub async fn try_write(&self, data: &[u8]) -> Result<bool> {
-        let mut conn = match self.conn.try_lock() {
-            Ok(guard) => guard,
-            Err(_) => return Ok(false),
-        };
-        conn.write_all(data).await?;
-        // Don't update activity for background updates like titles
-        Ok(true)
+        match self.writer_tx.try_send(data.to_vec()) {
+            Ok(_) => Ok(true),
+            Err(mpsc::error::TrySendError::Full(_)) => Ok(false),
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(CncError::ConnectionClosed),
+        }
     }
 
     pub async fn read_line(&self) -> Result<String> {
-        let mut conn = self.conn.lock().await;
+        let mut reader = self.reader.lock().await;
         let mut line = String::new();
         
         // Limit max line length to prevent memory exhaustion (e.g. 4KB)
         const MAX_LINE_LENGTH: usize = 4096;
         
-        match conn.read_line_limited(&mut line, MAX_LINE_LENGTH).await {
+        match read_line_safe(&mut *reader, &mut line, MAX_LINE_LENGTH).await {
             Ok(0) => return Err(CncError::ConnectionClosed),
             Ok(_) => {
                 self.update_activity().await;
@@ -161,6 +140,34 @@ impl Client {
     
     pub fn has_permission(&self, required: Level) -> bool {
         self.user.get_level() >= required
+    }
+}
+
+async fn read_line_safe<R: AsyncBufRead + Unpin + ?Sized>(reader: &mut R, line: &mut String, limit: usize) -> std::io::Result<usize> {
+    let mut total_read = 0;
+    loop {
+        let available = reader.fill_buf().await?;
+        let len = available.len();
+        if len == 0 {
+            return Ok(total_read);
+        }
+        
+        let (found_newline, bytes_to_consume) = match available.iter().position(|&b| b == b'\n') {
+            Some(pos) => (true, pos + 1),
+            None => (false, len),
+        };
+        
+        if line.len() + bytes_to_consume > limit {
+             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Line too long"));
+        }
+        
+        line.push_str(&String::from_utf8_lossy(&available[..bytes_to_consume]));
+        reader.consume(bytes_to_consume);
+        total_read += bytes_to_consume;
+        
+        if found_newline {
+            return Ok(total_read);
+        }
     }
 }
 

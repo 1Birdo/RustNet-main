@@ -104,9 +104,15 @@ pub async fn save_certificate(
 
 /// Setup TLS for the server - generates or loads certificates
 #[allow(dead_code)]
-pub async fn setup_tls(cert_path: &str, key_path: &str) -> Result<TlsAcceptor> {
+pub async fn setup_tls(cert_path: &str, key_path: &str, strict_mode: bool) -> Result<TlsAcceptor> {
     // Check if certificate files exist
     if !Path::new(cert_path).exists() || !Path::new(key_path).exists() {
+        if strict_mode {
+            return Err(CncError::ConfigError(
+                format!("TLS certificates not found at {} / {}. Strict mode is enabled, refusing to generate self-signed certs.", cert_path, key_path)
+            ));
+        }
+
         tracing::warn!("TLS certificates not found, generating self-signed certificate...");
         tracing::warn!("⚠️  For production use, replace with CA-signed certificates!");
         
