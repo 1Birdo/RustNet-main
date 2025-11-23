@@ -57,11 +57,12 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
             method TEXT NOT NULL,
             target_ip TEXT NOT NULL,
             target_port INTEGER NOT NULL,
-            duration_secs INTEGER NOT NULL,
+            duration INTEGER NOT NULL,
             username TEXT NOT NULL,
             started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             finished_at DATETIME,
-            bot_count INTEGER NOT NULL
+            status TEXT DEFAULT 'running',
+            bot_count INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS audit_logs (

