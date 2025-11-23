@@ -109,7 +109,7 @@ pub async fn setup_tls(cert_path: &str, key_path: &str, strict_mode: bool) -> Re
     if !Path::new(cert_path).exists() || !Path::new(key_path).exists() {
         if strict_mode {
             return Err(CncError::ConfigError(
-                format!("TLS certificates not found at {} / {}. Strict mode is enabled, refusing to generate self-signed certs.", cert_path, key_path)
+                format!("TLS certificates not found at {} / {}. Strict mode (or public deployment) is enabled, refusing to generate self-signed certs.", cert_path, key_path)
             ));
         }
 

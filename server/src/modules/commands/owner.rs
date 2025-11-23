@@ -575,3 +575,35 @@ pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, 
     
     Ok(())
 }
+
+pub async fn handle_bot_queue_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+    if parts.len() < 3 {
+        client.write(b"\x1b[38;5;196m[X] Usage: queue <bot_id> <command>\n\r").await?;
+        return Ok(());
+    }
+    
+    let bot_id_str = parts[1];
+    let command = parts[2..].join(" ");
+    
+    let bot_id = match uuid::Uuid::parse_str(bot_id_str) {
+        Ok(id) => id,
+        Err(_) => {
+            client.write(b"\x1b[38;5;196m[X] Invalid Bot ID format\n\r").await?;
+            return Ok(());
+        }
+    };
+    
+    match state.bot_manager.queue_command(bot_id, &command).await {
+        Ok(_) => {
+            client.write(format!("\x1b[38;5;82m[✓] Command queued for bot {}\n\r", bot_id).as_bytes()).await?;
+            let audit_event = AuditLog::new(client.user.username.clone(), "QUEUE_COMMAND".to_string(), "SUCCESS".to_string())
+                .with_target(format!("{} -> {}", bot_id, command));
+            let _ = log_audit_event(audit_event, &state.pool).await;
+        }
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] Failed to queue command: {}\n\r", e).as_bytes()).await?;
+        }
+    }
+    
+    Ok(())
+}

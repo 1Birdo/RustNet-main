@@ -316,12 +316,26 @@ impl Config {
         }
         
         // CRITICAL: Enforce TLS for public deployment
-        if self.deployment_mode == "public" && !self.enable_tls {
-            return Err(
-                "SECURITY ERROR: TLS must be enabled for public deployment!\n".to_string() + 
-                "Either set deployment_mode=\"local\" for local network use,\n" +
-                "or set enable_tls=true and configure cert_path/key_path for public deployment."
-            );
+        if self.deployment_mode == "public" {
+            if !self.enable_tls {
+                return Err(
+                    "SECURITY ERROR: TLS must be enabled for public deployment!\n".to_string() + 
+                    "Either set deployment_mode=\"local\" for local network use,\n" +
+                    "or set enable_tls=true and configure cert_path/key_path for public deployment."
+                );
+            }
+            
+            // In public mode, we must ensure certificates exist or strict_tls is handled
+            if !Path::new(&self.cert_path).exists() || !Path::new(&self.key_path).exists() {
+                // If strict_tls is true (default for public should be considered), we fail.
+                // But we also want to prevent auto-generation in public mode unless explicitly allowed?
+                // The requirement says: "In public deployment mode, the server should refuse to start if valid certificates are not provided, rather than generating insecure ones."
+                return Err(format!(
+                    "SECURITY ERROR: TLS certificates not found at {} / {}.\n", self.cert_path, self.key_path) +
+                    "In public mode, you must provide valid CA-signed certificates.\n" +
+                    "Auto-generation of self-signed certificates is disabled for public deployment."
+                );
+            }
         }
 
         if !self.enable_tls {

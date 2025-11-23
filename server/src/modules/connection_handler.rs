@@ -499,14 +499,25 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
                 }
             }
             
-            // Read response (PONG)
+            // Read response (PONG or STATUS)
             res = reader.read(&mut buf) => {
                 match res {
                     Ok(n) if n > 0 => {
                         // Got response, update heartbeat
                         let response = String::from_utf8_lossy(&buf[..n]);
+                        let response = response.trim();
+                        
                         if response.contains("PONG") {
                             bot_manager.update_bot_heartbeat(&bot_id).await;
+                        } else if response.starts_with("STATUS") {
+                            // Parse STATUS <cpu> <mem>
+                            let parts: Vec<&str> = response.split_whitespace().collect();
+                            if parts.len() >= 3 {
+                                if let (Ok(cpu), Ok(mem)) = (parts[1].parse::<f32>(), parts[2].parse::<f32>()) {
+                                    bot_manager.log_telemetry(bot_id, cpu, mem).await;
+                                    bot_manager.update_bot_heartbeat(&bot_id).await;
+                                }
+                            }
                         }
                     }
                     Ok(_) => {

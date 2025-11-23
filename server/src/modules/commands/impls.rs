@@ -462,6 +462,17 @@ impl Command for RevokeCommand {
     }
 }
 
+pub struct BotQueueCommand;
+#[async_trait]
+impl Command for BotQueueCommand {
+    fn name(&self) -> &'static str { "botqueue" }
+    fn description(&self) -> &'static str { "Queue command for bot" }
+    fn required_level(&self) -> Level { Level::Owner }
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
+        owner::handle_bot_queue_command(client, state, &args).await
+    }
+}
+
 // --- Attack Commands ---
 
 pub struct AttackCommand;
@@ -565,6 +576,7 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(ConfigCommand));
     registry.register(Box::new(TokensCommand));
     registry.register(Box::new(RevokeCommand));
+    registry.register(Box::new(BotQueueCommand));
 
     // Attack
     registry.register(Box::new(AttackCommand));
