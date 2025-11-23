@@ -8,59 +8,35 @@ use super::general::show_prompt;
 
 pub async fn handle_admin_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    let left_col_width = 37;
-    let right_col_width = main_width - left_col_width - 2;
-
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
     
-    // Title with gradient
     let title = apply_ice_gradient("Admin Menu");
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Admin Menu §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
-    // Headers
-    client.write(format!("\x1b[38;5;240m╠{}╦{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(left_col_width), "═".repeat(right_col_width)).as_bytes()).await?;
-    let left_hdr = apply_ice_gradient("Admin Commands");
-    let right_hdr = apply_ice_gradient("Monitoring + Control");
+    let commands = [
+        ("users", "Manage users"),
+        ("bots", "Manage bots"),
+        ("broadcast", "Send message to all users"),
+        ("kick", "Kick a user"),
+        ("ban", "Ban a user"),
+        ("unban", "Unban a user"),
+        ("banlist", "List banned users"),
+        ("logs", "View system logs"),
+        ("sessions", "View active sessions"),
+        ("userinfo", "View user information"),
+        ("listusers", "List all users"),
+        ("lock", "Lock a user account"),
+        ("botcount", "View bot statistics"),
+        ("blacklist", "Manage IP blacklist"),
+        ("whitelist", "Manage IP whitelist")
+    ];
     
-    let left_hdr_pad = left_col_width - visible_len("Admin Commands");
-    let right_hdr_pad = right_col_width - visible_len("Monitoring + Control");
-    
-    client.write(format!("\x1b[38;5;240m║{}{}{}║{}{}{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", 
-        " ".repeat(left_hdr_pad / 2), left_hdr, " ".repeat(left_hdr_pad - left_hdr_pad / 2),
-        " ".repeat(right_hdr_pad / 2), right_hdr, " ".repeat(right_hdr_pad - right_hdr_pad / 2)
-    ).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╬{}╬{}╣\n\r", "═".repeat(left_col_width), "═".repeat(right_col_width), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Render admin commands with panel
-    for (i, item) in ADMIN_COMMANDS.iter().enumerate() {
-        let panel = if i < ADMIN_PANEL.len() { format!(" {} ║", ADMIN_PANEL[i]) } else { "                              ║".to_string() };
-        
-        let cmd_gradient = apply_gradient(item.cmd, 45, 51);
-        let visible_cmd = visible_len(item.cmd);
-        let padding_cmd = if 34 > visible_cmd { 34 - visible_cmd } else { 0 };
-        let cmd_field = format!("{}{}", cmd_gradient, " ".repeat(padding_cmd));
-        
-        let desc_width = right_col_width - 1;
-        let desc_gradient = apply_gradient(item.desc, 51, 87);
-        let visible_desc = visible_len(item.desc);
-        let padding_desc = desc_width.saturating_sub(visible_desc);
-        let desc_field = format!("{}{}", desc_gradient, " ".repeat(padding_desc));
-        
-        client.write(format!("\x1b[38;5;240m║   {}║ {}║{}\n\r", cmd_field, desc_field, panel).as_bytes()).await?;
+    for (cmd, desc) in commands.iter() {
+        let cmd_gradient = apply_gradient(cmd, 39, 51);
+        client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", cmd_gradient, desc).as_bytes()).await?;
     }
     
-    // Footer
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\r\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
+    client.write(b"\n\r").await?;
     
     client.set_breadcrumb("Home > Admin Menu").await;
     show_prompt(client, state).await?;
@@ -71,46 +47,53 @@ pub async fn handle_listbots_command(client: &Arc<Client>, state: &Arc<AppState>
     let tokens = state.bot_manager.list_tokens().await;
     let bots = state.bot_manager.get_all_bots().await;
     
-    let mut table = TableBuilder::new("Registered Bots", state).await;
+    client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let stats_msg = format!("\x1b[38;5;240m║ \x1b[38;5;245mTotal: \x1b[38;5;39m{}\x1b[38;5;245m | Connected: \x1b[38;5;51m{}", tokens.len(), bots.len());
-    table.set_footer(&stats_msg);
+    let title = apply_ice_gradient("Registered Bots");
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
-    for token_info in tokens {
-        let connected_bot = bots.iter().find(|b| {
-            let info = b.info.try_lock();
-            if let Ok(info) = info {
-                info.id == token_info.bot_id
-            } else {
-                false
+    let stats_msg = format!("  \x1b[38;5;245mTotal: \x1b[38;5;39m{}\x1b[38;5;245m | Connected: \x1b[38;5;51m{}\x1b[0m\n\r", tokens.len(), bots.len());
+    client.write(stats_msg.as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    
+    if tokens.is_empty() {
+        client.write(b"  \x1b[38;5;245mNo bots registered\x1b[0m\n\r").await?;
+    } else {
+        for token_info in tokens {
+            let connected_bot = bots.iter().find(|b| {
+                let info = b.info.try_lock();
+                if let Ok(info) = info {
+                    info.id == token_info.bot_id
+                } else {
+                    false
+                }
+            });
+            
+            let is_connected = connected_bot.is_some();
+            let mut error_msg = String::new();
+            if let Some(bot) = connected_bot {
+                 let info = bot.info.lock().await;
+                 if let Some(err) = &info.last_error {
+                     error_msg = format!(" \x1b[38;5;196m[ERR: {}]\x1b[0m", err);
+                 }
             }
-        });
-        
-        let is_connected = connected_bot.is_some();
-        let mut error_msg = String::new();
-        if let Some(bot) = connected_bot {
-             let info = bot.info.lock().await;
-             if let Some(err) = &info.last_error {
-                 error_msg = format!(" \x1b[38;5;196m[ERR: {}]\x1b[38;5;240m", err);
-             }
+            
+            let status = if is_connected { "\x1b[38;5;51mONLINE\x1b[0m" } else { "\x1b[38;5;245mOFFLINE\x1b[0m" };
+            let last_used = token_info.last_used
+                .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "Never".to_string());
+                
+            let id_gradient = apply_gradient(&token_info.bot_id.to_string(), 39, 45);
+            let arch_gradient = apply_gradient(&token_info.arch, 45, 51);
+            let last_gradient = apply_gradient(&last_used, 51, 87);
+            
+            client.write(format!("  [{}] {} | {} | Last: {}{}\n\r", 
+                status, id_gradient, arch_gradient, last_gradient, error_msg).as_bytes()).await?;
         }
-        
-        let status = if is_connected { "\x1b[38;5;51mONLINE\x1b[38;5;240m" } else { "\x1b[38;5;245mOFFLINE\x1b[38;5;240m" };
-        let last_used = token_info.last_used
-            .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
-            .unwrap_or_else(|| "Never".to_string());
-            
-        let id_gradient = apply_gradient(&token_info.bot_id.to_string(), 39, 45);
-        let arch_gradient = apply_gradient(&token_info.arch, 45, 51);
-        let last_gradient = apply_gradient(&last_used, 51, 87);
-        
-        let line_content = format!("  [{}] {} | {} | Last: {}{}", 
-            status, id_gradient, arch_gradient, last_gradient, error_msg);
-            
-        table.add_row(line_content);
     }
     
-    client.write(table.build().as_bytes()).await?;
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Bot List").await;
     Ok(())
 }
@@ -304,23 +287,9 @@ pub async fn handle_broadcast_command(client: &Arc<Client>, state: &Arc<AppState
 pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, lines: usize) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Title
-    let title = apply_gradient("System Logs", 39, 51);
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ System Logs §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+    let title = apply_ice_gradient("System Logs");
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     // Query logs from database
     let logs = sqlx::query_as::<_, AuditLog>(
@@ -335,11 +304,9 @@ pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, li
     let logs: Vec<AuditLog> = logs.into_iter().rev().collect();
     
     if logs.is_empty() {
-        let msg = "No logs found";
-        let pad = main_width - visible_len(msg) - 2;
-        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+        client.write(b"  \x1b[38;5;245mNo logs found\x1b[0m\n\r").await?;
     } else {
-        for (i, log) in logs.iter().enumerate() {
+        for log in logs.iter() {
             let timestamp = log.timestamp.format("%Y-%m-%d %H:%M:%S");
             let target_str = if let Some(t) = &log.target { format!(" -> {}", t) } else { "".to_string() };
             let ip_str = if let Some(ip) = &log.ip_address { format!(" [{}]", ip) } else { "".to_string() };
@@ -353,21 +320,12 @@ pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, li
                 ip_str
             );
             
-            // Truncate line if too long
-            let max_len = main_width - 4;
-            let truncated = if line.len() > max_len { &line[..max_len] } else { &line };
-            
-            let log_gradient = apply_gradient(truncated, 245, 250);
-            let visible = visible_len(truncated);
-            let padding = if main_width > visible + 2 { main_width - visible - 2 } else { 0 };
-            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-            
-            client.write(format!("\x1b[38;5;240m║ {}\x1b[38;5;240m{}\x1b[38;5;240m║{}\n\r", log_gradient, " ".repeat(padding), right_panel).as_bytes()).await?;
+            let log_gradient = apply_gradient(&line, 245, 250);
+            client.write(format!("  {}\n\r", log_gradient).as_bytes()).await?;
         }
     }
     
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Logs").await;
     Ok(())
 }
@@ -376,30 +334,14 @@ pub async fn handle_sessions_command(client: &Arc<Client>, state: &Arc<AppState>
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let clients = state.client_manager.get_all_clients().await;
     
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Title with gradient
     let title = apply_ice_gradient("Active Sessions");
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Active Sessions §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     if clients.is_empty() {
-        let msg = "No active sessions";
-        let pad = main_width - visible_len(msg) - 2;
-        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+        client.write(b"  \x1b[38;5;245mNo active sessions\x1b[0m\n\r").await?;
     } else {
-        for (i, c) in clients.iter().enumerate() {
+        for c in clients.iter() {
             let elapsed = chrono::Utc::now().signed_duration_since(c.connected_at);
             let elapsed_secs = elapsed.num_seconds();
             let time_str = if elapsed_secs < 60 {
@@ -417,33 +359,12 @@ pub async fn handle_sessions_command(client: &Arc<Client>, state: &Arc<AppState>
             let id_gradient = apply_gradient(id_str, 51, 57);
             let time_gradient = apply_gradient(&time_str, 57, 87);
             
-            let user_pad = if 14 > c.user.username.len() { 14 - c.user.username.len() } else { 0 };
-            let addr_pad = if 16 > addr_str.len() { 16 - addr_str.len() } else { 0 };
-            
-            let line_content = format!(
-                "  {}{} | {}{} | {} | {}",
-                username_gradient, " ".repeat(user_pad),
-                addr_gradient, " ".repeat(addr_pad),
-                id_gradient,
-                time_gradient
-            );
-            
-            let visible = visible_len(&format!(
-                "  {:<14} | {:<16} | {:<8} | {}",
-                c.user.username,
-                c.address,
-                &c.id.to_string()[..8],
-                time_str
-            ));
-            let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
-            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-            
-            client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line_content, " ".repeat(padding), right_panel).as_bytes()).await?;
+            client.write(format!("  {} | {} | {} | {}\n\r", 
+                username_gradient, addr_gradient, id_gradient, time_gradient).as_bytes()).await?;
         }
     }
     
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Sessions").await;
     Ok(())
 }
@@ -460,23 +381,9 @@ pub async fn handle_userinfo_command(client: &Arc<Client>, state: &Arc<AppState>
     if let Ok(Some(user)) = state.user_manager.get_user(&username).await {
         client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
         
-        let width = get_terminal_width(state).await;
-        let side_width = 30;
-        let main_width = width - side_width - 2;
-        
-        // Top border
-        client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-        
-        // Title
         let title = apply_ice_gradient("User Information");
-        let title_text = format!("§ {} §", title);
-        let title_padding = main_width - visible_len("§ User Information §") - 2;
-        let left_pad = title_padding / 2;
-        let right_pad = title_padding - left_pad;
-        client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-            " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-        
-        client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+        client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+        client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
         
         // User info lines
         let username_gradient = apply_gradient(&user.username, 39, 45);
@@ -485,22 +392,12 @@ pub async fn handle_userinfo_command(client: &Arc<Client>, state: &Arc<AppState>
         let status_str = if user.expire > chrono::Utc::now() { "Active" } else { "Expired" };
         let status_gradient = apply_gradient(status_str, 57, 87);
 
-        let lines = [
-            format!("  Username: {}", username_gradient),
-            format!("  Level:    {}", level_gradient),
-            format!("  Expires:  {}", expire_gradient),
-            format!("  Status:   {}", status_gradient)
-        ];
+        client.write(format!("  \x1b[38;5;245mUsername: \x1b[0m{}\n\r", username_gradient).as_bytes()).await?;
+        client.write(format!("  \x1b[38;5;245mLevel:    \x1b[0m{}\n\r", level_gradient).as_bytes()).await?;
+        client.write(format!("  \x1b[38;5;245mExpires:  \x1b[0m{}\n\r", expire_gradient).as_bytes()).await?;
+        client.write(format!("  \x1b[38;5;245mStatus:   \x1b[0m{}\n\r", status_gradient).as_bytes()).await?;
         
-        for (i, line) in lines.iter().enumerate() {
-            let visible = visible_len(line);
-            let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
-            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-            
-            client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line, " ".repeat(padding), right_panel).as_bytes()).await?;
-        }
-        
-        client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
+        client.write(b"\n\r").await?;
     } else {
         client.write(format!("\x1b[38;5;196m[X] User '{}' not found\n\r", username).as_bytes()).await?;
     }
@@ -580,10 +477,15 @@ pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>
 pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     let users = state.user_manager.get_all_users().await.unwrap_or_default();
     
-    let mut table = TableBuilder::new("User List", state).await;
+    client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let total_msg = format!("\x1b[38;5;240m║ \x1b[38;5;245mTotal Users: \x1b[38;5;39m{:<10}\x1b[38;5;240m", users.len());
-    table.set_footer(&total_msg);
+    let title = apply_ice_gradient("User List");
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    
+    let total_msg = format!("  \x1b[38;5;245mTotal Users: \x1b[38;5;39m{}\x1b[0m\n\r", users.len());
+    client.write(total_msg.as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     for user in users {
         let expired = if user.expire < chrono::Utc::now() { " [EXPIRED]" } else { "" };
@@ -600,11 +502,10 @@ pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState
         let user_gradient = apply_gradient(&user_str, level_color, level_color + 6);
         let expire_gradient = apply_gradient(&expire_str, 245, 252);
         
-        let line_content = format!("  {} - {}", user_gradient, expire_gradient);
-        table.add_row(line_content);
+        client.write(format!("  {} - {}\n\r", user_gradient, expire_gradient).as_bytes()).await?;
     }
     
-    client.write(table.build().as_bytes()).await?;
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > User List").await;
     Ok(())
 }

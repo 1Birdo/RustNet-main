@@ -88,7 +88,7 @@ fn default_handshake_timeout_secs() -> u64 { 10 }
 fn default_bot_auth_timeout_secs() -> u64 { 5 }
 fn default_strict_tls() -> bool { false }
 fn default_rate_limit_per_minute() -> u32 { 10 }
-fn default_terminal_width() -> usize { 95 }
+fn default_terminal_width() -> usize { 90 }
 
 impl Default for Config {
     fn default() -> Self {
