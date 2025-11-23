@@ -39,7 +39,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
     };
 
     // Determine limits based on level
-    let (max_duration, cooldown) = match client.user.get_level() {
+    let (max_duration, _cooldown) = match client.user.get_level() {
         Level::Owner => (state.config.read().await.max_attack_duration_secs * 2, 10),
         Level::Admin => (state.config.read().await.max_attack_duration_secs, 5),
         Level::Pro => (state.config.read().await.max_attack_duration_secs, 3),
