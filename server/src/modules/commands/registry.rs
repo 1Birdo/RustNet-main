@@ -9,6 +9,7 @@ use crate::modules::auth::Level;
 #[async_trait]
 pub trait Command: Send + Sync {
     fn name(&self) -> &'static str;
+    #[allow(dead_code)]
     fn description(&self) -> &'static str;
     fn required_level(&self) -> Level;
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()>;
@@ -33,6 +34,7 @@ impl CommandRegistry {
         self.commands.get(name)
     }
 
+    #[allow(dead_code)]
     pub fn get_all(&self) -> Vec<&Box<dyn Command>> {
         self.commands.values().collect()
     }

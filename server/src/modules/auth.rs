@@ -362,6 +362,7 @@ impl User {
         self.level
     }
     
+    #[allow(dead_code)]
     pub fn new(username: String, password: &str, expire: DateTime<Utc>, level: Level) -> Result<Self> {
         let password_hash = hash_password(password)?;
         Ok(Self {

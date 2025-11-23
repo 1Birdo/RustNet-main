@@ -47,6 +47,7 @@ pub fn check_ip_safety(ip: IpAddr) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn validate_ip_address(ip_str: &str) -> Result<IpAddr> {
     let ip: IpAddr = ip_str
         .parse()
@@ -116,6 +117,7 @@ pub fn validate_attack_method(method: &str) -> Result<String> {
     Ok(mapped.to_string())
 }
 
+#[allow(dead_code)]
 pub fn validate_attack_command(parts: &[&str]) -> Result<(String, IpAddr, u16, u64)> {
     if parts.len() < 4 {
         return Err(CncError::InvalidCommand(

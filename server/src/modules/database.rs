@@ -62,7 +62,7 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL,
-            expire_at DATETIME NOT NULL,
+            expiry_date DATETIME NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 

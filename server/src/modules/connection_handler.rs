@@ -468,7 +468,8 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     // Send periodic PINGs and expect PONGs
     let bot_manager = state.bot_manager.clone();
     let mut interval = tokio::time::interval(Duration::from_secs(5)); // BOT_HEARTBEAT_INTERVAL
-    let mut buf = [0u8; 64];
+    let mut buf = [0u8; 1024]; // Increased buffer size
+    let mut line_buffer = String::new(); // Buffer for partial lines
     
     loop {
         tokio::select! {
@@ -503,19 +504,28 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
             res = reader.read(&mut buf) => {
                 match res {
                     Ok(n) if n > 0 => {
-                        // Got response, update heartbeat
-                        let response = String::from_utf8_lossy(&buf[..n]);
-                        let response = response.trim();
+                        // Append chunk to line buffer
+                        let chunk = String::from_utf8_lossy(&buf[..n]);
+                        line_buffer.push_str(&chunk);
                         
-                        if response.contains("PONG") {
-                            bot_manager.update_bot_heartbeat(&bot_id).await;
-                        } else if response.starts_with("STATUS") {
-                            // Parse STATUS <cpu> <mem>
-                            let parts: Vec<&str> = response.split_whitespace().collect();
-                            if parts.len() >= 3 {
-                                if let (Ok(cpu), Ok(mem)) = (parts[1].parse::<f32>(), parts[2].parse::<f32>()) {
-                                    bot_manager.log_telemetry(bot_id, cpu, mem).await;
+                        // Process all complete lines
+                        while let Some(pos) = line_buffer.find('\n') {
+                            let line = line_buffer[..pos].trim().to_string();
+                            // Remove processed line including newline
+                            line_buffer.drain(..=pos);
+                            
+                            if !line.is_empty() {
+                                if line.contains("PONG") {
                                     bot_manager.update_bot_heartbeat(&bot_id).await;
+                                } else if line.starts_with("STATUS") {
+                                    // Parse STATUS <cpu> <mem>
+                                    let parts: Vec<&str> = line.split_whitespace().collect();
+                                    if parts.len() >= 3 {
+                                        if let (Ok(cpu), Ok(mem)) = (parts[1].parse::<f32>(), parts[2].parse::<f32>()) {
+                                            bot_manager.log_telemetry(bot_id, cpu, mem).await;
+                                            bot_manager.update_bot_heartbeat(&bot_id).await;
+                                        }
+                                    }
                                 }
                             }
                         }

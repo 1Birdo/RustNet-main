@@ -9,10 +9,6 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use tokio_rustls::server::TlsStream;
 
-// Helper trait for Box<dyn ...>
-pub trait AsyncReadWrite: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
-impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> AsyncReadWrite for T {}
-
 pub struct Client {
     pub id: Uuid,
     reader: Arc<Mutex<Box<dyn AsyncBufRead + Unpin + Send>>>,

