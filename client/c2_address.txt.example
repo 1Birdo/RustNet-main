@@ -1,0 +1,21 @@
+# C2 Server Address Configuration
+# 
+# Copy this file to c2_address.txt and update with your C2 server address
+# Format: IP:PORT or HOSTNAME:PORT
+#
+# Example for local testing:
+# 127.0.0.1:7002
+#
+# Example for remote server:
+# 203.0.113.50:7002
+# myc2server.com:7002
+#
+# You can also set the C2_ADDRESS environment variable instead:
+# export C2_ADDRESS="203.0.113.50:7002"
+# 
+# Priority order:
+# 1. C2_ADDRESS environment variable
+# 2. c2_address.txt file
+# 3. Default: 127.0.0.1:7002
+
+127.0.0.1:7002

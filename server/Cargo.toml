@@ -1,0 +1,33 @@
+[package]
+name = "rustnet-server"
+version = "0.1.0"
+edition = "2021"
+authors = ["RustNet Contributors"]
+description = "Secure C&C server for bot network management"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+rcgen = { workspace = true }
+time = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+argon2 = { workspace = true }
+password-hash = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+config = { workspace = true }
+num_cpus = { workspace = true }
+toml = "0.8"
+sha2 = "0.10"
+sysinfo = "0.30"
+regex = "1.10"
+dashmap = "6.1.0"
+async-trait = { workspace = true }

@@ -1,0 +1,41 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Builds directory
+/builds/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+users.json
+bot_tokens.json
+attack_history.json
+audit.log
+rustnet.log
+
+# Security - Bot tokens (NEVER commit these!)
+bot_token.txt
+**/bot_token.txt
+BOT_AUTH_TOKEN
+
+# Backups
+*.backup.*
+users.json.backup.*
+users.json.pre-restore.*
+
+# TLS certificates (generate locally, don't commit)
+*.pem
+cert.pem
+key.pem
