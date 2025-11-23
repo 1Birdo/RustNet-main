@@ -62,8 +62,8 @@ impl Command for WhoAmICommand {
     fn name(&self) -> &'static str { "whoami" }
     fn description(&self) -> &'static str { "Show your user information" }
     fn required_level(&self) -> Level { Level::Basic }
-    async fn execute(&self, client: &Arc<Client>, _state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
-        general::handle_whoami_command(client).await
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
+        general::handle_whoami_command(client, state).await
     }
 }
 
@@ -84,8 +84,8 @@ impl Command for GifCommand {
     fn name(&self) -> &'static str { "gif" }
     fn description(&self) -> &'static str { "Play a GIF animation" }
     fn required_level(&self) -> Level { Level::Basic }
-    async fn execute(&self, client: &Arc<Client>, _state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
-        general::handle_gif_command(client, &args).await
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
+        general::handle_gif_command(client, state, &args).await
     }
 }
 
@@ -117,8 +117,8 @@ impl Command for VersionCommand {
     fn name(&self) -> &'static str { "version" }
     fn description(&self) -> &'static str { "Show server version" }
     fn required_level(&self) -> Level { Level::Basic }
-    async fn execute(&self, client: &Arc<Client>, _state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
-        general::handle_version_command(client).await
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
+        general::handle_version_command(client, state).await
     }
 }
 
@@ -128,8 +128,8 @@ impl Command for RulesCommand {
     fn name(&self) -> &'static str { "rules" }
     fn description(&self) -> &'static str { "Show server rules" }
     fn required_level(&self) -> Level { Level::Basic }
-    async fn execute(&self, client: &Arc<Client>, _state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
-        general::handle_rules_command(client).await
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
+        general::handle_rules_command(client, state).await
     }
 }
 

@@ -157,7 +157,7 @@ pub async fn handle_ongoing_command(client: &Arc<Client>, state: &Arc<AppState>)
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let attacks = state.attack_manager.get_all_attacks().await;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -264,7 +264,7 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let history = state.attack_manager.get_history(20).await;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -326,7 +326,7 @@ pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -
     let queue_size = state.attack_manager.get_queue_size().await;
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     

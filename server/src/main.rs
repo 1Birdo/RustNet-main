@@ -173,7 +173,7 @@ async fn main() -> Result<()> {
         Arc::new(BotManager::new(config.max_bot_connections, db_pool.clone())),
         Arc::new(ClientManager::new(config.max_user_connections)),
         Arc::new(AttackManager::new(config.max_attacks, config.attack_cooldown_secs, config.max_attack_duration_secs, db_pool.clone())),
-        Arc::new(SimpleRateLimiter::new(db_pool.clone(), config.rate_limit_per_minute)),
+        Arc::new(SimpleRateLimiter::new(db_pool.clone(), config.rate_limit_per_minute as usize)),
         user_manager,
         tls_acceptor,
         db_pool.clone(),

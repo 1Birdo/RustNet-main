@@ -18,7 +18,7 @@ pub async fn render_status_bar(client: &Arc<Client>, state: &Arc<AppState>) -> R
     let minutes = (uptime.as_secs() % 3600) / 60;
     
     let breadcrumb = client.get_breadcrumb().await;
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     
     // Position cursor at row 31 to reserve row 32 for the prompt
     client.write(b"\x1b[31;1H").await?;
@@ -94,7 +94,7 @@ pub async fn handle_stats_command(client: &Arc<Client>, state: &Arc<AppState>) -
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -149,7 +149,7 @@ pub async fn handle_health_command(client: &Arc<Client>, state: &Arc<AppState>) 
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -204,7 +204,7 @@ pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) 
     let clients = state.client_manager.get_all_clients().await;
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
 
@@ -274,9 +274,9 @@ pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) 
     Ok(())
 }
 
-pub async fn handle_whoami_command(client: &Arc<Client>) -> Result<()> {
+pub async fn handle_whoami_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
 
@@ -336,7 +336,7 @@ pub async fn handle_uptime_command(client: &Arc<Client>, state: &Arc<AppState>) 
     let seconds = uptime.as_secs() % 60;
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
 
@@ -371,7 +371,7 @@ pub async fn handle_uptime_command(client: &Arc<Client>, state: &Arc<AppState>) 
     Ok(())
 }
 
-pub async fn handle_gif_command(client: &Arc<Client>, parts: &[&str]) -> Result<()> {
+pub async fn handle_gif_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     use tokio::io::AsyncBufReadExt;
     use std::path::Path;
 
@@ -399,7 +399,7 @@ pub async fn handle_gif_command(client: &Arc<Client>, parts: &[&str]) -> Result<
 
         client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
         
-        let width = get_terminal_width();
+        let width = get_terminal_width(state).await;
         let side_width = 30;
         let main_width = width - side_width - 2;
         
@@ -516,7 +516,7 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     let left_width = main_width - 1;
@@ -716,10 +716,10 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     Ok(())
 }
 
-pub async fn handle_version_command(client: &Arc<Client>) -> Result<()> {
+pub async fn handle_version_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -755,10 +755,10 @@ pub async fn handle_version_command(client: &Arc<Client>) -> Result<()> {
     Ok(())
 }
 
-pub async fn handle_rules_command(client: &Arc<Client>) -> Result<()> {
+pub async fn handle_rules_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     

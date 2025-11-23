@@ -71,7 +71,7 @@ pub async fn handle_listbots_command(client: &Arc<Client>, state: &Arc<AppState>
     let tokens = state.bot_manager.list_tokens().await;
     let bots = state.bot_manager.get_all_bots().await;
     
-    let mut table = TableBuilder::new("Registered Bots");
+    let mut table = TableBuilder::new("Registered Bots", state).await;
     
     let stats_msg = format!("\x1b[38;5;240m║ \x1b[38;5;245mTotal: \x1b[38;5;39m{}\x1b[38;5;245m | Connected: \x1b[38;5;51m{}", tokens.len(), bots.len());
     table.set_footer(&stats_msg);
@@ -580,7 +580,7 @@ pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>
 pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     let users = state.user_manager.get_all_users().await.unwrap_or_default();
     
-    let mut table = TableBuilder::new("User List");
+    let mut table = TableBuilder::new("User List", state).await;
     
     let total_msg = format!("\x1b[38;5;240m║ \x1b[38;5;245mTotal Users: \x1b[38;5;39m{:<10}\x1b[38;5;240m", users.len());
     table.set_footer(&total_msg);

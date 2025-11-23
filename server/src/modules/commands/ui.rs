@@ -1,10 +1,12 @@
 use regex::Regex;
+use std::sync::Arc;
+use crate::modules::state::AppState;
 
 // ============= DYNAMIC TABLE RENDERING UTILITIES =============
 
 /// Get terminal width (default to 120 for full screen experience)
-pub fn get_terminal_width() -> usize {
-    95 // Adjusted to fit standard terminals better
+pub async fn get_terminal_width(state: &Arc<AppState>) -> usize {
+    state.config.read().await.terminal_width
 }
 
 /// Generate color gradient for string based on position
@@ -166,10 +168,10 @@ pub struct TableBuilder {
 }
 
 impl TableBuilder {
-    pub fn new(title: &str) -> Self {
+    pub async fn new(title: &str, state: &Arc<AppState>) -> Self {
         Self {
             title: title.to_string(),
-            width: get_terminal_width(),
+            width: get_terminal_width(state).await,
             side_width: 30,
             rows: Vec::new(),
             footer_msg: None,
