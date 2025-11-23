@@ -2,9 +2,10 @@
 use crate::Client;
 use crate::Result;
 use std::sync::Arc;
+use crate::modules::state::AppState;
 
-pub fn get_terminal_width() -> usize {
-    95 // Fixed for network terminals
+pub async fn get_terminal_width(state: &Arc<AppState>) -> usize {
+    state.config.read().await.terminal_width
 }
 
 pub fn apply_gradient(text: &str, start_color: u8, end_color: u8) -> String {
@@ -74,6 +75,7 @@ pub fn center_text(text: &str, width: usize) -> String {
 
 pub async fn render_centered_table<T>(
     client: &Arc<Client>,
+    width: usize,
     title: &str,
     title_color_start: u8,
     title_color_end: u8,
@@ -83,8 +85,6 @@ pub async fn render_centered_table<T>(
 where
     T: Send + Sync,
 {
-    let width = get_terminal_width();
-    
     // Top border
     client.write(format!("\x1b[38;5;240m╭{}╮\r\n", "═".repeat(width - 2)).as_bytes()).await?;
     
@@ -116,6 +116,7 @@ where
 
 pub async fn render_dual_panel_menu(
     client: &Arc<Client>,
+    width: usize,
     title: &str,
     title_color: u8,
     left_header: &str,
@@ -124,7 +125,6 @@ pub async fn render_dual_panel_menu(
     right_items: Vec<String>,
     side_panel: Vec<String>,
 ) -> Result<()> {
-    let width = get_terminal_width();
     let side_width = 30;
     let main_width = width - side_width - 2;
     

