@@ -32,3 +32,4 @@ regex = "1.10"
 dashmap = "6.1.0"
 async-trait = { workspace = true }
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "chrono"] }
+futures = "0.3.31"
