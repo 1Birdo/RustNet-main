@@ -2,10 +2,9 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use crate::modules::client_manager::Client;
 use crate::modules::state::AppState;
-use crate::modules::attack_manager::VALID_ATTACK_METHODS;
 use crate::modules::error::{Result, AuditLog, log_audit_event};
 use crate::modules::auth::Level;
-use crate::modules::validation::{validate_port, validate_duration, check_ip_safety};
+use crate::modules::validation::{validate_port, validate_duration, check_ip_safety, validate_attack_method};
 use super::ui::*;
 
 pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
@@ -14,7 +13,14 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
         return Ok(());
     }
 
-    let method_str = parts[1].to_uppercase();
+    let method_str = match validate_attack_method(parts[1]) {
+        Ok(m) => m,
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] {}\n\r", e).as_bytes()).await?;
+            return Ok(());
+        }
+    };
+
     let target = parts[2].to_string();
     
     let port = match validate_port(parts[3]) {
@@ -53,11 +59,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
         return Ok(());
     }
 
-    // Validate method
-    if !VALID_ATTACK_METHODS.contains(&method_str.as_str()) {
-        client.write(b"\x1b[38;5;196m[X] Invalid attack method\n\r").await?;
-        return Ok(());
-    }
+    // Method is already validated and normalized above
 
     // Parse IP or resolve domain
     let ip = match target.parse::<std::net::IpAddr>() {

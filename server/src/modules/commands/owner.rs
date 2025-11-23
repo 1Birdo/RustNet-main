@@ -218,9 +218,6 @@ pub async fn handle_restore_command(client: &Arc<Client>, state: &Arc<AppState>,
         } else {
             client.write(format!("\x1b[38;5;196m[X] Restore failed: {}\n\r", String::from_utf8_lossy(&output.stderr)).as_bytes()).await?;
         }
-    } else {
-        client.write(format!("\x1b[38;5;196m[X] Backup '{}' not found\n\r", backup_name).as_bytes()).await?;
-    }
     
     Ok(())
 }
