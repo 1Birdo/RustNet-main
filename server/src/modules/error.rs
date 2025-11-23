@@ -57,13 +57,15 @@ pub type Result<T> = std::result::Result<T, CncError>;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use crate::modules::database::DbPool;
+use sqlx::FromRow;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AuditLog {
     pub timestamp: DateTime<Utc>,
     pub username: String,
     pub action: String,
     pub target: Option<String>,
+    #[sqlx(rename = "details")]
     pub result: String,
     pub ip_address: Option<String>,
 }

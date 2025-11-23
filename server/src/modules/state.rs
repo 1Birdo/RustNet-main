@@ -4,6 +4,7 @@ use tokio::sync::RwLock;
 use tokio_rustls::TlsAcceptor;
 use dashmap::DashSet;
 use std::net::IpAddr;
+use sqlx::SqlitePool;
 use super::auth::{LoginAttemptTracker, UserManager};
 use super::client_manager::ClientManager;
 use super::config::Config;
@@ -20,7 +21,7 @@ pub struct AppState {
     pub rate_limiter: Arc<SimpleRateLimiter>,
     pub user_manager: Arc<UserManager>,
     pub tls_acceptor: Option<Arc<TlsAcceptor>>,
-    pub audit_file: String,
+    pub pool: SqlitePool,
     pub login_tracker: Arc<LoginAttemptTracker>,
     pub whitelist: Arc<DashSet<IpAddr>>,
     pub blacklist: Arc<DashSet<IpAddr>>,
@@ -35,7 +36,7 @@ impl AppState {
         rate_limiter: Arc<SimpleRateLimiter>,
         user_manager: Arc<UserManager>,
         tls_acceptor: Option<Arc<TlsAcceptor>>,
-        audit_file: String,
+        pool: SqlitePool,
         login_tracker: Arc<LoginAttemptTracker>,
     ) -> Self {
         Self {
@@ -47,7 +48,7 @@ impl AppState {
             rate_limiter,
             user_manager,
             tls_acceptor,
-            audit_file,
+            pool,
             login_tracker,
             whitelist: Arc::new(DashSet::new()),
             blacklist: Arc::new(DashSet::new()),

@@ -13,39 +13,49 @@ use sqlx::{SqlitePool, Row};
 
 /// Manages user authentication and storage
 pub struct UserManager {
-    users_file: String,
-    users_cache: Arc<RwLock<Vec<User>>>,
-
+    pool: SqlitePool,
 }
 
 impl UserManager {
-    pub fn new(users_file: String) -> Self {
+    pub fn new(pool: SqlitePool) -> Self {
         Self {
-            users_file,
-            users_cache: Arc::new(RwLock::new(Vec::new())),
+            pool,
         }
     }
 
-    pub async fn load_users(&self) -> Result<()> {
-        let contents = match fs::read_to_string(&self.users_file).await {
-            Ok(c) => c,
-            Err(_) => return Ok(()), // File might not exist yet
-        };
+    pub async fn get_all_users(&self) -> Result<Vec<User>> {
+        let users = sqlx::query("SELECT username, password_hash, role, expiry_date FROM users")
+            .map(|row: sqlx::sqlite::SqliteRow| {
+                let role_str: String = row.get("role");
+                User {
+                    username: row.get("username"),
+                    password_hash: row.get("password_hash"),
+                    expire: row.get("expiry_date"),
+                    level: Level::from_str(&role_str),
+                }
+            })
+            .fetch_all(&self.pool)
+            .await?;
         
-        let users: Vec<User> = serde_json::from_str(&contents).unwrap_or_default();
-        *self.users_cache.write().await = users;
-        Ok(())
+        Ok(users)
     }
 
-    pub async fn get_all_users(&self) -> Vec<User> {
-        self.users_cache.read().await.clone()
-    }
+    pub async fn get_user(&self, username: &str) -> Result<Option<User>> {
+        let user = sqlx::query("SELECT username, password_hash, role, expiry_date FROM users WHERE username = ?")
+            .bind(username)
+            .map(|row: sqlx::sqlite::SqliteRow| {
+                let role_str: String = row.get("role");
+                User {
+                    username: row.get("username"),
+                    password_hash: row.get("password_hash"),
+                    expire: row.get("expiry_date"),
+                    level: Level::from_str(&role_str),
+                }
+            })
+            .fetch_optional(&self.pool)
+            .await?;
 
-    pub async fn get_user(&self, username: &str) -> Option<User> {
-        let users = self.users_cache.read().await;
-        users.iter()
-            .find(|u| u.username.eq_ignore_ascii_case(username))
-            .cloned()
+        Ok(user)
     }
 
     pub async fn authenticate(&self, username: &str, password: &str) -> Result<Option<User>> {
@@ -57,10 +67,16 @@ impl UserManager {
             return Err(CncError::AuthFailed("Invalid password format".to_string()));
         }
 
-        let users = self.users_cache.read().await;
-        for user in users.iter() {
-            if user.username.eq_ignore_ascii_case(username) && verify_password(password, &user.password_hash)? && user.expire > Utc::now() {
-                return Ok(Some(user.clone()));
+        let user_opt = self.get_user(username).await?;
+        
+        if let Some(user) = user_opt {
+            if verify_password(password, &user.password_hash)? {
+                if user.expire > Utc::now() {
+                    return Ok(Some(user));
+                } else {
+                     // Account expired
+                     return Ok(None);
+                }
             }
         }
         
@@ -76,33 +92,47 @@ impl UserManager {
             return Err(CncError::AuthFailed("Invalid password format".to_string()));
         }
 
-        let mut users = self.users_cache.write().await;
-        if users.iter().any(|u| u.username.eq_ignore_ascii_case(&username)) {
-            return Err(CncError::AuthFailed(format!("User '{}' already exists", username)));
+        // Check if user exists
+        if self.get_user(&username).await?.is_some() {
+             return Err(CncError::AuthFailed(format!("User '{}' already exists", username)));
         }
 
-        let new_user = User::new(username, password, expire, level)?;
-        users.push(new_user);
+        let password_hash = hash_password(password)?;
+        let role_str = level.to_str();
+
+        sqlx::query("INSERT INTO users (username, password_hash, role, expiry_date) VALUES (?, ?, ?, ?)")
+            .bind(&username)
+            .bind(password_hash)
+            .bind(role_str)
+            .bind(expire)
+            .execute(&self.pool)
+            .await?;
         
-        // Save to file
-        self.save_users_internal(&users).await?;
         Ok(())
     }
 
     pub async fn delete_user(&self, username: &str) -> Result<()> {
-        let mut users = self.users_cache.write().await;
-        let initial_len = users.len();
-        users.retain(|u| !u.username.eq_ignore_ascii_case(username));
-        
-        if users.len() == initial_len {
-            return Err(CncError::AuthFailed(format!("User '{}' not found", username)));
-        }
-        
-        if users.is_empty() {
-            return Err(CncError::AuthFailed("Cannot delete last user".to_string()));
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&self.pool)
+            .await?;
+
+        // Prevent deleting the last user to avoid lockout
+        if count <= 1 {
+             // Check if the user we are trying to delete actually exists
+             if self.get_user(username).await?.is_some() {
+                 return Err(CncError::AuthFailed("Cannot delete last user".to_string()));
+             }
         }
 
-        self.save_users_internal(&users).await?;
+        let result = sqlx::query("DELETE FROM users WHERE username = ?")
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(CncError::AuthFailed(format!("User '{}' not found", username)));
+        }
+
         Ok(())
     }
 
@@ -111,100 +141,56 @@ impl UserManager {
             return Err(CncError::AuthFailed("Invalid password format".to_string()));
         }
 
-        let mut users = self.users_cache.write().await;
-        let user = users.iter_mut()
-            .find(|u| u.username.eq_ignore_ascii_case(username))
-            .ok_or_else(|| CncError::AuthFailed(format!("User '{}' not found", username)))?;
+        let password_hash = hash_password(new_password)?;
 
-        user.password_hash = hash_password(new_password)?;
+        let result = sqlx::query("UPDATE users SET password_hash = ? WHERE username = ?")
+            .bind(password_hash)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(CncError::AuthFailed(format!("User '{}' not found", username)));
+        }
         
-        self.save_users_internal(&users).await?;
         Ok(())
     }
 
     pub async fn update_user(&self, username: &str, level: Option<Level>, expire: Option<DateTime<Utc>>) -> Result<()> {
-        let mut users = self.users_cache.write().await;
-        let user = users.iter_mut()
-            .find(|u| u.username.eq_ignore_ascii_case(username))
-            .ok_or_else(|| CncError::AuthFailed(format!("User '{}' not found", username)))?;
+        if level.is_none() && expire.is_none() {
+            return Ok(());
+        }
 
+        let mut query = "UPDATE users SET ".to_string();
+        let mut updates = Vec::new();
+        
+        if level.is_some() {
+            updates.push("role = ?");
+        }
+        if expire.is_some() {
+            updates.push("expiry_date = ?");
+        }
+        
+        query.push_str(&updates.join(", "));
+        query.push_str(" WHERE username = ?");
+        
+        let mut q = sqlx::query(&query);
+        
         if let Some(l) = level {
-            user.level = l;
+            q = q.bind(l.to_str());
         }
         if let Some(e) = expire {
-            user.expire = e;
+            q = q.bind(e);
+        }
+        
+        q = q.bind(username);
+        
+        let result = q.execute(&self.pool).await?;
+        
+        if result.rows_affected() == 0 {
+             return Err(CncError::AuthFailed(format!("User '{}' not found", username)));
         }
 
-        self.save_users_internal(&users).await?;
-        Ok(())
-    }
-
-    pub async fn check_database_integrity(&self) -> Result<Vec<String>> {
-        let mut warnings = Vec::new();
-        let mut users = self.users_cache.read().await.clone();
-        
-        // Check for duplicate usernames (case-insensitive)
-        let mut seen = std::collections::HashSet::new();
-        let mut duplicates = Vec::new();
-        
-        for user in &users {
-            let username_lower = user.username.to_lowercase();
-            if !seen.insert(username_lower.clone()) {
-                duplicates.push(username_lower);
-            }
-        }
-        
-        if !duplicates.is_empty() {
-            warnings.push(format!("Found {} duplicate username(s): {}", 
-                duplicates.len(), 
-                duplicates.join(", ")
-            ));
-            
-            // Remove duplicates, keeping only the most recently expired entry
-            let mut unique_users = Vec::new();
-            let mut seen_usernames = std::collections::HashSet::new();
-            
-            // Sort by expiry date descending
-            users.sort_by(|a, b| b.expire.cmp(&a.expire));
-            
-            for user in users.clone() {
-                let username_lower = user.username.to_lowercase();
-                if seen_usernames.insert(username_lower) {
-                    unique_users.push(user);
-                }
-            }
-            
-            // Update cache and file
-            *self.users_cache.write().await = unique_users.clone();
-            self.save_users_internal(&unique_users).await?;
-            
-            warnings.push(format!("Removed {} duplicate entries, kept {} unique users", 
-                users.len() - unique_users.len(),
-                unique_users.len()
-            ));
-        }
-        
-        // Check for expired accounts
-        let now = Utc::now();
-        let expired_count = users.iter().filter(|u| u.expire < now).count();
-        if expired_count > 0 {
-            warnings.push(format!("Found {} expired account(s)", expired_count));
-        }
-        
-        Ok(warnings)
-    }
-
-    async fn save_users_internal(&self, users: &[User]) -> Result<()> {
-        // Create backup
-        if tokio::fs::metadata(&self.users_file).await.is_ok() {
-            let timestamp = chrono::Utc::now().timestamp();
-            let backup_file = format!("{}.backup.{}", self.users_file, timestamp);
-            let _ = tokio::fs::copy(&self.users_file, &backup_file).await;
-            cleanup_old_backups(&self.users_file).await;
-        }
-
-        let json = serde_json::to_string_pretty(users)?;
-        fs::write(&self.users_file, json).await?;
         Ok(())
     }
 }
@@ -416,95 +402,7 @@ pub fn set_title(title: &str) -> String {
     format!("\x1B]0;{}\x07", title)
 }
 
-/// Cleanup old backup files, keeping only the last 10
-async fn cleanup_old_backups(users_file: &str) {
-    let path = std::path::Path::new(users_file);
-    let dir_path = path.parent().unwrap_or(std::path::Path::new("."));
-    let file_name = match path.file_name().and_then(|n| n.to_str()) {
-        Some(n) => n,
-        None => return,
-    };
-    
-    let mut backups = Vec::new();
-    
-    if let Ok(mut entries) = tokio::fs::read_dir(dir_path).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            if let Ok(name) = entry.file_name().into_string() {
-                if name.starts_with(file_name) && name.contains(".backup.") {
-                    if let Ok(metadata) = entry.metadata().await {
-                        if let Ok(modified) = metadata.modified() {
-                            backups.push((entry.path(), modified));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Sort by modification time (newest first)
-    backups.sort_by(|a, b| b.1.cmp(&a.1));
-    
-    // Remove old backups (keep only 10 most recent)
-    for (path, _) in backups.iter().skip(10) {
-        if let Err(e) = tokio::fs::remove_file(path).await {
-            tracing::warn!("Failed to remove old backup {:?}: {}", path, e);
-        } else {
-            tracing::debug!("Removed old backup: {:?}", path);
-        }
-    }
-}
 
-pub async fn migrate_plaintext_passwords_at(users_file: &str) -> Result<()> {
-    let contents = match fs::read_to_string(users_file).await {
-        Ok(c) => c,
-        Err(_) => return Ok(()), // No file to migrate
-    };
-    
-    #[derive(Deserialize)]
-    struct OldUser {
-        #[serde(rename = "Username")]
-        username: String,
-        #[serde(rename = "Password", default)]
-        password: Option<String>,
-        #[serde(rename = "PasswordHash", default)]
-        password_hash: Option<String>,
-        #[serde(rename = "Expire")]
-        expire: DateTime<Utc>,
-        #[serde(rename = "Level")]
-        level: String,
-    }
-    
-    let old_users: Vec<OldUser> = serde_json::from_str(&contents)?;
-    let mut new_users = Vec::new();
-    let mut migrated = false;
-    
-    for old_user in old_users {
-        let hash = if let Some(existing_hash) = old_user.password_hash {
-            existing_hash
-        } else if let Some(plaintext) = old_user.password {
-            migrated = true;
-            tracing::warn!("Migrating plaintext password for user: {}", old_user.username);
-            hash_password(&plaintext)?
-        } else {
-            return Err(CncError::AuthFailed("User has no password or hash".to_string()));
-        };
-        
-        new_users.push(User {
-            username: old_user.username,
-            password_hash: hash,
-            expire: old_user.expire,
-            level: Level::from_str(&old_user.level),
-        });
-    }
-    
-    if migrated {
-        let json = serde_json::to_string_pretty(&new_users)?;
-        fs::write(users_file, json).await?;
-        tracing::info!("Successfully migrated plaintext passwords to hashed format");
-    }
-    
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {

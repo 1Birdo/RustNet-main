@@ -4,10 +4,9 @@ use std::net::SocketAddr;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tokio::fs;
 use sha2::{Sha256, Digest};
 use dashmap::DashMap;
+use sqlx::{SqlitePool, Row};
 
 /// Bot token information for authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,37 +73,16 @@ impl Bot {
 pub struct BotManager {
     bots: Arc<DashMap<Uuid, Arc<Bot>>>,
     max_connections: usize,
-    bot_tokens: Arc<DashMap<String, BotToken>>,
-    tokens_file: String,
+    pool: SqlitePool,
 }
 
 impl BotManager {
-    pub fn new(max_connections: usize, tokens_file: String) -> Self {
+    pub fn new(max_connections: usize, pool: SqlitePool) -> Self {
         Self {
             bots: Arc::new(DashMap::new()),
             max_connections,
-            bot_tokens: Arc::new(DashMap::new()),
-            tokens_file,
+            pool,
         }
-    }
-    
-    /// Load bot tokens from file
-    pub async fn load_tokens(&self) -> Result<(), String> {
-        if !std::path::Path::new(&self.tokens_file).exists() {
-            return Ok(());  // No tokens file yet
-        }
-        
-        let contents = fs::read_to_string(&self.tokens_file).await
-            .map_err(|e| format!("Failed to read tokens file: {}", e))?;
-        
-        let tokens: HashMap<String, BotToken> = serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse tokens file: {}", e))?;
-        
-        for (k, v) in tokens {
-            self.bot_tokens.insert(k, v);
-        }
-        tracing::info!("Loaded {} bot tokens", self.bot_tokens.len());
-        Ok(())
     }
     
     /// Hash a token using SHA256
@@ -114,24 +92,6 @@ impl BotManager {
         format!("{:x}", hasher.finalize())
     }
     
-    /// Save bot tokens to file
-    async fn save_tokens(&self) -> Result<(), String> {
-        let tokens: HashMap<String, BotToken> = self.bot_tokens.iter().map(|r| (r.key().clone(), r.value().clone())).collect();
-        let json = serde_json::to_string_pretty(&tokens)
-            .map_err(|e| format!("Failed to serialize tokens: {}", e))?;
-        
-        // Ensure config directory exists
-        if let Some(parent) = std::path::Path::new(&self.tokens_file).parent() {
-            tokio::fs::create_dir_all(parent).await
-                .map_err(|e| format!("Failed to create config directory: {}", e))?;
-        }
-        
-        fs::write(&self.tokens_file, json).await
-            .map_err(|e| format!("Failed to write tokens file: {}", e))?;
-        
-        Ok(())
-    }
-    
     /// Register a new bot and return its token (ONLY SHOWN ONCE!)
     pub async fn register_bot(&self, arch: String) -> Result<(Uuid, String), String> {
         let bot_id = Uuid::new_v4();
@@ -139,17 +99,16 @@ impl BotManager {
         
         // Hash the token for storage - never store plaintext!
         let token_hash = Self::hash_token(&token);
+        let now = Utc::now();
         
-        let bot_token = BotToken {
-            token_hash: token_hash.clone(),
-            bot_id,
-            arch,
-            created_at: Utc::now(),
-            last_used: None,
-        };
-        
-        self.bot_tokens.insert(token_hash, bot_token);
-        self.save_tokens().await?;
+        sqlx::query("INSERT INTO bot_tokens (token_hash, bot_id, arch, created_at) VALUES (?, ?, ?, ?)")
+            .bind(&token_hash)
+            .bind(bot_id.to_string())
+            .bind(&arch)
+            .bind(now)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Database error: {}", e))?;
         
         tracing::info!("Registered new bot {} - TOKEN WILL BE SHOWN ONLY ONCE!", bot_id);
         Ok((bot_id, token))
@@ -159,43 +118,60 @@ impl BotManager {
     pub async fn verify_bot_token(&self, token: &str) -> Option<(Uuid, String)> {
         let token_hash = Self::hash_token(token);
         
-        if let Some(mut bot_token) = self.bot_tokens.get_mut(&token_hash) {
-            bot_token.last_used = Some(Utc::now());
-            let bot_id = bot_token.bot_id;
-            let arch = bot_token.arch.clone();
-            drop(bot_token); // Release lock
-            let _ = self.save_tokens().await;  // Update last_used time
-            Some((bot_id, arch))
-        } else {
-            None
-        }
+        let row = sqlx::query("SELECT bot_id, arch FROM bot_tokens WHERE token_hash = ?")
+            .bind(&token_hash)
+            .fetch_optional(&self.pool)
+            .await
+            .ok()??;
+
+        let bot_id_str: String = row.get("bot_id");
+        let arch: String = row.get("arch");
+        let bot_id = Uuid::parse_str(&bot_id_str).ok()?;
+
+        // Update last_used
+        let _ = sqlx::query("UPDATE bot_tokens SET last_used = ? WHERE token_hash = ?")
+            .bind(Utc::now())
+            .bind(&token_hash)
+            .execute(&self.pool)
+            .await;
+
+        Some((bot_id, arch))
     }
     
     /// Revoke a bot token by Bot ID
     pub async fn revoke_token(&self, bot_id: Uuid) -> Result<(), String> {
-        // Find the token hash associated with this bot_id
-        let mut token_hash_to_remove = None;
-        
-        for entry in self.bot_tokens.iter() {
-            if entry.value().bot_id == bot_id {
-                token_hash_to_remove = Some(entry.key().clone());
-                break;
-            }
+        let result = sqlx::query("DELETE FROM bot_tokens WHERE bot_id = ?")
+            .bind(bot_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Database error: {}", e))?;
+
+        if result.rows_affected() == 0 {
+            return Err(format!("No token found for bot ID {}", bot_id));
         }
         
-        if let Some(hash) = token_hash_to_remove {
-            self.bot_tokens.remove(&hash);
-            self.save_tokens().await?;
-            tracing::info!("Revoked bot token for bot {}", bot_id);
-            Ok(())
-        } else {
-            Err(format!("No token found for bot ID {}", bot_id))
-        }
+        tracing::info!("Revoked bot token for bot {}", bot_id);
+        Ok(())
     }
     
     /// List all registered bot tokens
     pub async fn list_tokens(&self) -> Vec<BotToken> {
-        self.bot_tokens.iter().map(|r| r.value().clone()).collect()
+        let rows = sqlx::query("SELECT token_hash, bot_id, arch, created_at, last_used FROM bot_tokens")
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+
+        rows.into_iter().filter_map(|row| {
+            let bot_id_str: String = row.get("bot_id");
+            let bot_id = Uuid::parse_str(&bot_id_str).ok()?;
+            Some(BotToken {
+                token_hash: row.get("token_hash"),
+                bot_id,
+                arch: row.get("arch"),
+                created_at: row.get("created_at"),
+                last_used: row.get("last_used"),
+            })
+        }).collect()
     }
     
     pub async fn add_bot(&self, bot: Bot) -> Result<Arc<Bot>, String> {
@@ -249,6 +225,15 @@ impl BotManager {
         }
     }
     
+    pub async fn log_telemetry(&self, bot_id: Uuid, cpu: f32, mem: f32) {
+        let _ = sqlx::query("INSERT INTO bot_telemetry (bot_id, cpu_usage, memory_usage) VALUES (?, ?, ?)")
+            .bind(bot_id.to_string())
+            .bind(cpu)
+            .bind(mem)
+            .execute(&self.pool)
+            .await;
+    }
+
     pub async fn cleanup_dead_bots(&self, timeout_secs: i64) {
         let now = Utc::now();
         let mut to_remove = Vec::new();
