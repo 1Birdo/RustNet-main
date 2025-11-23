@@ -50,13 +50,13 @@ pub async fn handle_authenticated_user(client: Arc<Client>, state: Arc<AppState>
                 if let Some(cmd) = registry.get(&command_name) {
                     if client.has_permission(cmd.required_level()) {
                         if let Err(e) = cmd.execute(&client, &state, parts).await {
-                            client.write(format!("\x1b[38;5;196m[X] Error: {}\n\r", e).as_bytes()).await?;
+                            client.write(format!("\x1b[38;5;39m[-] Error: {}\n\r", e).as_bytes()).await?;
                         }
                     } else {
-                        client.write(b"\x1b[38;5;196m[X] Permission denied\n\r").await?;
+                        client.write(b"\x1b[38;5;39m[-] Permission denied\n\r").await?;
                     }
                 } else {
-                    client.write(format!("\x1b[38;5;196m[X] Unknown command: {}\n\r", command_name).as_bytes()).await?;
+                    client.write(format!("\x1b[38;5;39m[-] Unknown command: {}\n\r", command_name).as_bytes()).await?;
                 }
 
                 show_prompt(&client, &state).await?;

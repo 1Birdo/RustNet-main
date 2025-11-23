@@ -157,30 +157,14 @@ pub async fn handle_ongoing_command(client: &Arc<Client>, state: &Arc<AppState>)
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let attacks = state.attack_manager.get_all_attacks().await;
     
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Title
     let title = apply_ice_gradient("Ongoing Attacks");
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Ongoing Attacks §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     if attacks.is_empty() {
-        let msg = "No ongoing attacks";
-        let pad = main_width - visible_len(msg) - 2;
-        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+        client.write(b"  \x1b[38;5;245mNo ongoing attacks\x1b[0m\n\r").await?;
     } else {
-        for (i, attack) in attacks.iter().enumerate() {
+        for attack in attacks.iter() {
             let remaining = attack.remaining_duration().as_secs();
             if remaining == 0 { continue; }
             
@@ -193,21 +177,12 @@ pub async fn handle_ongoing_command(client: &Arc<Client>, state: &Arc<AppState>)
             let method_gradient = apply_gradient(method_str, 57, 63);
             let time_gradient = apply_gradient(&format!("{}s", remaining), 63, 87);
             
-            let line_content = format!("  {} | {} | {} | {} | {}", 
-                id_gradient, user_gradient, target_gradient, method_gradient, time_gradient);
-                
-            let visible = visible_len(&format!("  {} | {} | {} | {} | {}s", 
-                attack.id, attack.username, target_str, method_str, remaining));
-                
-            let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
-            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-            
-            client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line_content, " ".repeat(padding), right_panel).as_bytes()).await?;
+            client.write(format!("  {} | {} | {} | {} | {}\n\r", 
+                id_gradient, user_gradient, target_gradient, method_gradient, time_gradient).as_bytes()).await?;
         }
     }
     
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Ongoing Attacks").await;
     Ok(())
 }
@@ -264,23 +239,9 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let history = state.attack_manager.get_history(20).await;
     
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Title
     let title = apply_ice_gradient("Attack History");
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Attack History §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     // Filter for user unless admin
     let user_history: Vec<_> = history.iter()
@@ -289,11 +250,9 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
         .collect();
         
     if user_history.is_empty() {
-        let msg = "No attack history";
-        let pad = main_width - visible_len(msg) - 2;
-        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+        client.write(b"  \x1b[38;5;245mNo attack history\x1b[0m\n\r").await?;
     } else {
-        for (i, attack) in user_history.iter().enumerate() {
+        for attack in user_history.iter() {
             let method_str = &attack.method;
             let target_str = format!("{}:{}", attack.ip, attack.port);
             let time_str = &attack.started_at; // It's a string
@@ -303,21 +262,12 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
             let method_gradient = apply_gradient(method_str, 51, 57);
             let time_gradient = apply_gradient(&time_str[11..19], 57, 87); // Extract HH:MM:SS
             
-            let line_content = format!("  {} | {} | {} | {}", 
-                user_gradient, target_gradient, method_gradient, time_gradient);
-                
-            let visible = visible_len(&format!("  {} | {} | {} | {}", 
-                attack.username, target_str, method_str, &time_str[11..19]));
-                
-            let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
-            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-            
-            client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line_content, " ".repeat(padding), right_panel).as_bytes()).await?;
+            client.write(format!("  {} | {} | {} | {}\n\r", 
+                user_gradient, target_gradient, method_gradient, time_gradient).as_bytes()).await?;
         }
     }
     
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
+    client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > History").await;
     Ok(())
 }
@@ -326,28 +276,13 @@ pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -
     let queue_items = state.attack_manager.get_queue_items().await;
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
     
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Title
     let title = apply_ice_gradient("Attack Queue");
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Attack Queue §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(main_width - 1)).as_bytes()).await?;
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
     if queue_items.is_empty() {
-        let msg = "Queue is empty";
-        let pad = main_width - visible_len(msg) - 2;
-        client.write(format!("\x1b[38;5;240m║ \x1b[38;5;245m{}\x1b[38;5;240m{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", msg, " ".repeat(pad)).as_bytes()).await?;
+        client.write(b"  \x1b[38;5;245mQueue is empty\x1b[0m\n\r").await?;
     } else {
         for (i, item) in queue_items.iter().enumerate() {
             let method_str = &item.method;
@@ -360,20 +295,12 @@ pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -
             let method_gradient = apply_gradient(method_str, 57, 63);
             let time_gradient = apply_gradient(&format!("{}s", item.duration_secs), 63, 87);
             
-            let line_content = format!("  {} | {} | {} | {} | {}", 
-                pos_gradient, user_gradient, target_gradient, method_gradient, time_gradient);
-                
-            let visible = visible_len(&format!("  #{} | {} | {} | {} | {}s", 
-                i + 1, user_str, target_str, method_str, item.duration_secs));
-                
-            let padding = if main_width > visible + 1 { main_width - visible - 1 } else { 0 };
-            let right_panel = if i == 0 { "░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║" } else { "                              ║" };
-            
-            client.write(format!("\x1b[38;5;240m║{}{}\x1b[38;5;240m║{}\n\r", line_content, " ".repeat(padding), right_panel).as_bytes()).await?;
+            client.write(format!("  {} | {} | {} | {} | {}\n\r", 
+                pos_gradient, user_gradient, target_gradient, method_gradient, time_gradient).as_bytes()).await?;
         }
     }
     
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
+    client.write(b"\n\r").await?;
     
     Ok(())
 }

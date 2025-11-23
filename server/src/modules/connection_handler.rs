@@ -114,7 +114,7 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
              // If TLS is enabled but we are here, it means state.tls_acceptor is None which shouldn't happen if config.enable_tls is true
              // unless setup failed. But main.rs handles that.
         } else {
-            let warning = "\x1b[38;5;196m[!] WARNING: CONNECTION IS NOT ENCRYPTED (NO TLS)\n\r";
+            let warning = "\x1b[38;5;39m[!] WARNING: CONNECTION IS NOT ENCRYPTED (NO TLS)\n\r";
             conn.write_all(warning.as_bytes()).await?;
         }
 
@@ -132,7 +132,7 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
             match auth_user_interactive(&mut conn, &addr, &state).await {
                 Ok(user) => {
                     info!("✓ User {} authenticated from {}", user.username, addr);
-                    conn.write_all(b"\x1b[0m\r                           \x1b[38;5;15m\x1b[38;5;118m[OK] Authentication Successful\n").await?;
+                    conn.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
                     
                     // Create client with proper reader/writer split
                     let client = match state.client_manager.add_client(Client::new(conn, user)?).await {
@@ -147,7 +147,7 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
                 }
                 Err(e) => {
                     warn!("✗ Authentication failed from {}: {}", addr, e);
-                    conn.write_all(b"\x1b[0m\r                           \x1b[38;5;196m[FAIL] Authentication Failed\n").await?;
+                    conn.write_all(b"\x1b[0m\r\x1b[38;5;39m[-] Authentication Failed\n").await?;
                 }
             }
         }
@@ -165,7 +165,7 @@ async fn handle_tls_auth(
     match auth_user_interactive(&mut tls_stream, addr, &state).await {
         Ok(user) => {
             info!("✓ User {} authenticated from {}", user.username, addr);
-            tls_stream.write_all(b"\x1b[0m\r                           \x1b[38;5;15m\x1b[38;5;118m[OK] Authentication Successful\n").await?;
+            tls_stream.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
             
             let client = match state.client_manager.add_client(Client::new_from_tls(tls_stream, user)?).await {
                 Ok(c) => c,
@@ -179,7 +179,7 @@ async fn handle_tls_auth(
         }
         Err(e) => {
             warn!("✗ Authentication failed from {}: {}", addr, e);
-            tls_stream.write_all(b"\x1b[0m\r                           \x1b[38;5;196m[FAIL] Authentication Failed\n").await?;
+            tls_stream.write_all(b"\x1b[0m\r\x1b[38;5;39m[-] Authentication Failed\n").await?;
         }
     }
     Ok(())
@@ -196,8 +196,8 @@ where
 
     for attempt in 1..=3 {
         conn.write_all(b"\x1b[0m\r\n\r\n\r\n\r\n\r\n\r\n\r\n").await?;
-        conn.write_all(b"\r                        \x1b[38;5;109m> Auth\x1b[38;5;146ment\x1b[38;5;182micat\x1b[38;5;218mion -- \x1b[38;5;196mReq\x1b[38;5;161muir\x1b[38;5;89med\n").await?;
-        conn.write_all(b"\x1b[0m\r                       > Username\x1b[38;5;62m: ").await?;
+        conn.write_all(b"\r\x1b[38;5;39m> \x1b[38;5;45mA\x1b[38;5;51mu\x1b[38;5;87mt\x1b[38;5;195mh\x1b[38;5;87me\x1b[38;5;51mn\x1b[38;5;45mt\x1b[38;5;39mi\x1b[38;5;45mc\x1b[38;5;51ma\x1b[38;5;87mt\x1b[38;5;195mi\x1b[38;5;87mo\x1b[38;5;51mn \x1b[38;5;45mR\x1b[38;5;39me\x1b[38;5;45mq\x1b[38;5;51mu\x1b[38;5;87mi\x1b[38;5;195mr\x1b[38;5;87me\x1b[38;5;51md\n").await?;
+        conn.write_all(b"\x1b[0m\r> Username\x1b[38;5;51m: ").await?;
         
         // Read username
         let mut username = String::new();
@@ -244,7 +244,7 @@ where
             continue;
         }
         
-        conn.write_all(b"\n\r\x1b[0m\r                       > Password\x1b[38;5;62m: \x1b[38;5;255m\x1b[48;5;255m").await?;
+        conn.write_all(b"\n\r\x1b[0m\r> Password\x1b[38;5;51m: \x1b[38;5;255m\x1b[48;5;255m").await?;
         
         // Read password
         let mut password = String::new();

