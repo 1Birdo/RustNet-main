@@ -149,7 +149,16 @@ impl Config {
         
         // Fall back to environment variables and defaults
         tracing::warn!("No config file found, using environment variables and defaults");
-        Self::from_env()
+        let config = Self::from_env();
+        
+        // Auto-generate default config file if it doesn't exist
+        if let Err(e) = config.save() {
+            tracing::warn!("Failed to save default configuration: {}", e);
+        } else {
+            tracing::info!("Created default configuration at config/server.toml");
+        }
+        
+        config
     }
     
     fn from_toml_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
