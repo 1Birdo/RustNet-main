@@ -4,7 +4,7 @@ use tokio::process::Command;
 use crate::modules::client_manager::Client;
 use crate::modules::state::AppState;
 use crate::modules::error::{Result, AuditLog, log_audit_event};
-use crate::modules::auth::{User, Level};
+use crate::modules::auth::Level;
 use super::ui::*;
 use super::general::show_prompt;
 

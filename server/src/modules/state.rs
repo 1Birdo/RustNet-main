@@ -9,7 +9,6 @@ use super::config::Config;
 use super::bot_manager::BotManager;
 use super::attack_manager::AttackManager;
 use super::rate_limiter::SimpleRateLimiter;
-use super::error::{CncError, Result};
 
 pub struct AppState {
     pub config: Config,

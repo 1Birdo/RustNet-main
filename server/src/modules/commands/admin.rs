@@ -1,6 +1,5 @@
 use std::sync::Arc;
-use std::iter;
-use tokio::io::{AsyncWriteExt, AsyncBufReadExt, AsyncSeekExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
 use tokio::fs::File;
 use crate::modules::client_manager::Client;
 use crate::modules::state::AppState;
@@ -337,19 +336,21 @@ pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, li
                 }
             }
 
-            let mut reader = BufReader::new(file);
-            let mut log_lines = Vec::new();
+            let reader = BufReader::new(file);
+            let mut log_lines = std::collections::VecDeque::with_capacity(lines);
             let mut lines_iter = reader.lines();
             
             // If we sought, the first line might be partial garbage, but we can't easily know.
             // We'll just read and display.
             
             while let Ok(Some(line)) = lines_iter.next_line().await {
-                log_lines.push(line);
+                if log_lines.len() >= lines {
+                    log_lines.pop_front();
+                }
+                log_lines.push_back(line);
             }
             
-            let start = if log_lines.len() > lines { log_lines.len() - lines } else { 0 };
-            for (i, line) in log_lines[start..].iter().enumerate() {
+            for (i, line) in log_lines.iter().enumerate() {
                 // Truncate line if too long
                 let max_len = main_width - 4;
                 let truncated = if line.len() > max_len { &line[..max_len] } else { line };

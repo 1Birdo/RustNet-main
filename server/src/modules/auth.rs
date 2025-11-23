@@ -418,8 +418,12 @@ pub fn set_title(title: &str) -> String {
 
 /// Cleanup old backup files, keeping only the last 10
 async fn cleanup_old_backups(users_file: &str) {
-    let dir_path = std::path::Path::new(users_file).parent().unwrap_or(std::path::Path::new("."));
-    let file_name = std::path::Path::new(users_file).file_name().unwrap().to_str().unwrap();
+    let path = std::path::Path::new(users_file);
+    let dir_path = path.parent().unwrap_or(std::path::Path::new("."));
+    let file_name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n,
+        None => return,
+    };
     
     let mut backups = Vec::new();
     

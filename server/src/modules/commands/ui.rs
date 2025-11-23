@@ -43,7 +43,11 @@ pub fn apply_ice_gradient(text: &str) -> String {
 
 /// Strip ANSI codes to get true text length
 pub fn strip_ansi(text: &str) -> String {
-    let ansi_regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+    use std::sync::OnceLock;
+    static ANSI_REGEX: OnceLock<Regex> = OnceLock::new();
+    let ansi_regex = ANSI_REGEX.get_or_init(|| {
+        Regex::new(r"\x1b\[[0-9;]*m").expect("Invalid ANSI regex")
+    });
     ansi_regex.replace_all(text, "").to_string()
 }
 

@@ -20,7 +20,7 @@ use std::time::Duration;
 use tracing::{info, warn, error, debug};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use modules::auth::{User, Level, random_string, set_title, migrate_plaintext_passwords_at, 
+use modules::auth::{Level, random_string, set_title, migrate_plaintext_passwords_at, 
            LoginAttemptTracker, UserManager};
 use modules::client_manager::ClientManager;
 use modules::config::Config;
@@ -379,7 +379,7 @@ async fn update_titles(state: Arc<AppState>) {
     let mut spin_index = 0;
     
     loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         
         let clients = state.client_manager.get_all_clients().await;
         let bot_count = state.bot_manager.get_bot_count().await;
