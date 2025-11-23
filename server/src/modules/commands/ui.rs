@@ -84,7 +84,7 @@ pub const OWNER_COMMANDS: &[MenuItem] = &[
     MenuItem { cmd: "✪. userchange", desc: "❃. backup" },
     MenuItem { cmd: "❃. db", desc: "✪. restore" },
     MenuItem { cmd: "✪. config", desc: "❃. tokens" },
-    MenuItem { cmd: "❃. revoke", desc: "" },
+    MenuItem { cmd: "❃. revoke", desc: "✪. botqueue" },
 ];
 
 pub const ADMIN_PANEL: &[&str] = &[
