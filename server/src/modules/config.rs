@@ -60,6 +60,9 @@ pub struct Config {
 
     #[serde(default = "default_strict_tls")]
     pub strict_tls: bool,
+
+    #[serde(default = "default_rate_limit_per_minute")]
+    pub rate_limit_per_minute: u32,
 }
 
 fn default_user_server_ip() -> String { "0.0.0.0".to_string() }
@@ -81,6 +84,7 @@ fn default_login_magic_string() -> String { "loginforme".to_string() }
 fn default_handshake_timeout_secs() -> u64 { 10 }
 fn default_bot_auth_timeout_secs() -> u64 { 5 }
 fn default_strict_tls() -> bool { false }
+fn default_rate_limit_per_minute() -> u32 { 10 }
 
 impl Default for Config {
     fn default() -> Self {
@@ -104,6 +108,7 @@ impl Default for Config {
             handshake_timeout_secs: default_handshake_timeout_secs(),
             bot_auth_timeout_secs: default_bot_auth_timeout_secs(),
             strict_tls: default_strict_tls(),
+            rate_limit_per_minute: default_rate_limit_per_minute(),
         }
     }
 }

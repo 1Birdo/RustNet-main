@@ -608,3 +608,107 @@ pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState
     client.set_breadcrumb("Home > User List").await;
     Ok(())
 }
+
+pub async fn handle_blacklist_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+    if parts.len() < 3 {
+        client.write(b"\x1b[38;5;196m[X] Usage: blacklist <add/remove> <ip> [reason]\n\r").await?;
+        return Ok(());
+    }
+    
+    let action = parts[1].to_lowercase();
+    let ip_str = parts[2];
+    let reason = if parts.len() > 3 { parts[3..].join(" ") } else { "No reason provided".to_string() };
+    
+    let ip = match ip_str.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip,
+        Err(_) => {
+            client.write(format!("\x1b[38;5;196m[X] Invalid IP address: {}\n\r", ip_str).as_bytes()).await?;
+            return Ok(());
+        }
+    };
+    
+    match action.as_str() {
+        "add" => {
+            state.blacklist.insert(ip);
+            let _ = sqlx::query("INSERT OR REPLACE INTO blacklist (ip, reason) VALUES (?, ?)
+")
+                .bind(ip_str)
+                .bind(&reason)
+                .execute(&state.pool)
+                .await;
+            client.write(format!("\x1b[38;5;82m[✓] Added {} to blacklist\n\r", ip_str).as_bytes()).await?;
+            
+            let audit_event = AuditLog::new(client.user.username.clone(), "BLACKLIST_ADD".to_string(), "SUCCESS".to_string())
+                .with_target(ip_str.to_string());
+            let _ = log_audit_event(audit_event, &state.pool).await;
+        },
+        "remove" => {
+            state.blacklist.remove(&ip);
+            let _ = sqlx::query("DELETE FROM blacklist WHERE ip = ?")
+                .bind(ip_str)
+                .execute(&state.pool)
+                .await;
+            client.write(format!("\x1b[38;5;82m[✓] Removed {} from blacklist\n\r", ip_str).as_bytes()).await?;
+            
+            let audit_event = AuditLog::new(client.user.username.clone(), "BLACKLIST_REMOVE".to_string(), "SUCCESS".to_string())
+                .with_target(ip_str.to_string());
+            let _ = log_audit_event(audit_event, &state.pool).await;
+        },
+        _ => {
+            client.write(b"\x1b[38;5;196m[X] Unknown action. Use 'add' or 'remove'\n\r").await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn handle_whitelist_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+    if parts.len() < 3 {
+        client.write(b"\x1b[38;5;196m[X] Usage: whitelist <add/remove> <ip> [description]\n\r").await?;
+        return Ok(());
+    }
+    
+    let action = parts[1].to_lowercase();
+    let ip_str = parts[2];
+    let description = if parts.len() > 3 { parts[3..].join(" ") } else { "No description".to_string() };
+    
+    let ip = match ip_str.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip,
+        Err(_) => {
+            client.write(format!("\x1b[38;5;196m[X] Invalid IP address: {}\n\r", ip_str).as_bytes()).await?;
+            return Ok(());
+        }
+    };
+    
+    match action.as_str() {
+        "add" => {
+            state.whitelist.insert(ip);
+            let _ = sqlx::query("INSERT OR REPLACE INTO whitelist (ip, description) VALUES (?, ?)
+")
+                .bind(ip_str)
+                .bind(&description)
+                .execute(&state.pool)
+                .await;
+            client.write(format!("\x1b[38;5;82m[✓] Added {} to whitelist\n\r", ip_str).as_bytes()).await?;
+            
+            let audit_event = AuditLog::new(client.user.username.clone(), "WHITELIST_ADD".to_string(), "SUCCESS".to_string())
+                .with_target(ip_str.to_string());
+            let _ = log_audit_event(audit_event, &state.pool).await;
+        },
+        "remove" => {
+            state.whitelist.remove(&ip);
+            let _ = sqlx::query("DELETE FROM whitelist WHERE ip = ?")
+                .bind(ip_str)
+                .execute(&state.pool)
+                .await;
+            client.write(format!("\x1b[38;5;82m[✓] Removed {} from whitelist\n\r", ip_str).as_bytes()).await?;
+            
+            let audit_event = AuditLog::new(client.user.username.clone(), "WHITELIST_REMOVE".to_string(), "SUCCESS".to_string())
+                .with_target(ip_str.to_string());
+            let _ = log_audit_event(audit_event, &state.pool).await;
+        },
+        _ => {
+            client.write(b"\x1b[38;5;196m[X] Unknown action. Use 'add' or 'remove'\n\r").await?;
+        }
+    }
+    Ok(())
+}

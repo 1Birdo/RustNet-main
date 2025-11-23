@@ -447,61 +447,6 @@ pub async fn handle_userchange_command(client: &Arc<Client>, state: &Arc<AppStat
     Ok(())
 }
 
-pub async fn handle_whitelist_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
-    let ip_str = match parts.get(1) {
-        Some(i) => i.to_string(),
-        None => {
-            client.write(b"\x1b[38;5;196m[X] Usage: whitelist <ip>\n\r").await?;
-            return Ok(());
-        }
-    };
-    
-    let ip = match ip_str.parse::<std::net::IpAddr>() {
-        Ok(ip) => ip,
-        Err(_) => {
-            client.write(b"\x1b[38;5;196m[X] Invalid IP address\n\r").await?;
-            return Ok(());
-        }
-    };
-
-    state.whitelist.insert(ip);
-    
-    client.write(format!("\x1b[38;5;82m[✓] IP {} added to whitelist\n\r", ip).as_bytes()).await?;
-    
-    let audit_event = AuditLog::new(client.user.username.clone(), "WHITELIST_IP".to_string(), "SUCCESS".to_string())
-        .with_target(ip.to_string());
-    let _ = log_audit_event(audit_event, &state.pool).await;
-    
-    Ok(())
-}
-
-pub async fn handle_blacklist_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
-    let ip_str = match parts.get(1) {
-        Some(i) => i.to_string(),
-        None => {
-            client.write(b"\x1b[38;5;196m[X] Usage: blacklist <ip>\n\r").await?;
-            return Ok(());
-        }
-    };
-    
-    let ip = match ip_str.parse::<std::net::IpAddr>() {
-        Ok(ip) => ip,
-        Err(_) => {
-            client.write(b"\x1b[38;5;196m[X] Invalid IP address\n\r").await?;
-            return Ok(());
-        }
-    };
-
-    state.blacklist.insert(ip);
-    
-    client.write(format!("\x1b[38;5;82m[✓] IP {} added to blacklist\n\r", ip).as_bytes()).await?;
-    
-    let audit_event = AuditLog::new(client.user.username.clone(), "BLACKLIST_IP".to_string(), "SUCCESS".to_string())
-        .with_target(ip.to_string());
-    let _ = log_audit_event(audit_event, &state.pool).await;
-    
-    Ok(())
-}
 
 pub async fn handle_config_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {

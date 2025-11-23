@@ -414,7 +414,7 @@ impl Command for WhitelistCommand {
     fn description(&self) -> &'static str { "Whitelist an IP" }
     fn required_level(&self) -> Level { Level::Owner }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
-        owner::handle_whitelist_command(client, state, &args).await
+        admin::handle_whitelist_command(client, state, &args).await
     }
 }
 
@@ -425,7 +425,7 @@ impl Command for BlacklistCommand {
     fn description(&self) -> &'static str { "Blacklist an IP" }
     fn required_level(&self) -> Level { Level::Owner }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
-        owner::handle_blacklist_command(client, state, &args).await
+        admin::handle_blacklist_command(client, state, &args).await
     }
 }
 
