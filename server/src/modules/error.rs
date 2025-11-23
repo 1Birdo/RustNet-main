@@ -46,6 +46,9 @@ pub enum CncError {
     
     #[error("Password hash error: {0}")]
     PasswordHashError(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
 }
 
 pub type Result<T> = std::result::Result<T, CncError>;
@@ -53,6 +56,7 @@ pub type Result<T> = std::result::Result<T, CncError>;
 // Audit logging structures
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+use crate::modules::database::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLog {
@@ -87,25 +91,17 @@ impl AuditLog {
     }
 }
 
-pub async fn log_audit_event(event: AuditLog, audit_file: &str) -> Result<()> {
-    use tokio::fs::OpenOptions;
-    use tokio::io::AsyncWriteExt;
+pub async fn log_audit_event(event: AuditLog, pool: &DbPool) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO audit_logs (username, action, target, ip_address, details) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(&event.username)
+    .bind(&event.action)
+    .bind(&event.target)
+    .bind(&event.ip_address)
+    .bind(&event.result)
+    .execute(pool)
+    .await?;
     
-    let log_line = format!(
-        "[{}] {} by {} - {} {}\n",
-        event.timestamp.format("%Y-%m-%d %H:%M:%S"),
-        event.action,
-        event.username,
-        event.result,
-        event.target.map(|t| format!("(target: {})", t)).unwrap_or_default()
-    );
-    
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(audit_file)
-        .await?;
-    
-    file.write_all(log_line.as_bytes()).await?;
     Ok(())
 }

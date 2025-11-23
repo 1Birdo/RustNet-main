@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
 use chrono::{DateTime, Utc};
-use tokio::fs;
 use super::error::{CncError, Result};
 use argon2::{
     Argon2,
@@ -10,11 +9,12 @@ use std::collections::HashMap;
 use std::time::Instant;
 use tokio::sync::Mutex;
 use std::sync::Arc;
+use sqlx::{SqlitePool, Row};
 
 /// Manages user authentication and storage
 pub struct UserManager {
     users_file: String,
-    users_cache: Arc<Mutex<Vec<User>>>,
+    users_cache: Arc<RwLock<Vec<User>>>,
 
 }
 
@@ -22,7 +22,7 @@ impl UserManager {
     pub fn new(users_file: String) -> Self {
         Self {
             users_file,
-            users_cache: Arc::new(Mutex::new(Vec::new())),
+            users_cache: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -33,16 +33,16 @@ impl UserManager {
         };
         
         let users: Vec<User> = serde_json::from_str(&contents).unwrap_or_default();
-        *self.users_cache.lock().await = users;
+        *self.users_cache.write().await = users;
         Ok(())
     }
 
     pub async fn get_all_users(&self) -> Vec<User> {
-        self.users_cache.lock().await.clone()
+        self.users_cache.read().await.clone()
     }
 
     pub async fn get_user(&self, username: &str) -> Option<User> {
-        let users = self.users_cache.lock().await;
+        let users = self.users_cache.read().await;
         users.iter()
             .find(|u| u.username.eq_ignore_ascii_case(username))
             .cloned()
@@ -57,7 +57,7 @@ impl UserManager {
             return Err(CncError::AuthFailed("Invalid password format".to_string()));
         }
 
-        let users = self.users_cache.lock().await;
+        let users = self.users_cache.read().await;
         for user in users.iter() {
             if user.username.eq_ignore_ascii_case(username) && verify_password(password, &user.password_hash)? && user.expire > Utc::now() {
                 return Ok(Some(user.clone()));
@@ -76,7 +76,7 @@ impl UserManager {
             return Err(CncError::AuthFailed("Invalid password format".to_string()));
         }
 
-        let mut users = self.users_cache.lock().await;
+        let mut users = self.users_cache.write().await;
         if users.iter().any(|u| u.username.eq_ignore_ascii_case(&username)) {
             return Err(CncError::AuthFailed(format!("User '{}' already exists", username)));
         }
@@ -90,7 +90,7 @@ impl UserManager {
     }
 
     pub async fn delete_user(&self, username: &str) -> Result<()> {
-        let mut users = self.users_cache.lock().await;
+        let mut users = self.users_cache.write().await;
         let initial_len = users.len();
         users.retain(|u| !u.username.eq_ignore_ascii_case(username));
         
@@ -111,7 +111,7 @@ impl UserManager {
             return Err(CncError::AuthFailed("Invalid password format".to_string()));
         }
 
-        let mut users = self.users_cache.lock().await;
+        let mut users = self.users_cache.write().await;
         let user = users.iter_mut()
             .find(|u| u.username.eq_ignore_ascii_case(username))
             .ok_or_else(|| CncError::AuthFailed(format!("User '{}' not found", username)))?;
@@ -123,7 +123,7 @@ impl UserManager {
     }
 
     pub async fn update_user(&self, username: &str, level: Option<Level>, expire: Option<DateTime<Utc>>) -> Result<()> {
-        let mut users = self.users_cache.lock().await;
+        let mut users = self.users_cache.write().await;
         let user = users.iter_mut()
             .find(|u| u.username.eq_ignore_ascii_case(username))
             .ok_or_else(|| CncError::AuthFailed(format!("User '{}' not found", username)))?;
@@ -141,7 +141,7 @@ impl UserManager {
 
     pub async fn check_database_integrity(&self) -> Result<Vec<String>> {
         let mut warnings = Vec::new();
-        let mut users = self.users_cache.lock().await.clone();
+        let mut users = self.users_cache.read().await.clone();
         
         // Check for duplicate usernames (case-insensitive)
         let mut seen = std::collections::HashSet::new();
@@ -175,7 +175,7 @@ impl UserManager {
             }
             
             // Update cache and file
-            *self.users_cache.lock().await = unique_users.clone();
+            *self.users_cache.write().await = unique_users.clone();
             self.save_users_internal(&unique_users).await?;
             
             warnings.push(format!("Removed {} duplicate entries, kept {} unique users", 
