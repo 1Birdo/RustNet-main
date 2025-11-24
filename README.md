@@ -1,5 +1,7 @@
 ## Key Features
 
+This is a improvised and just a overall better overhaul of BotnetGoV2.
+
 *   **High-Performance Architecture**: Leverages Rust's zero-cost abstractions and Tokio's asynchronous runtime to handle thousands of concurrent connections efficiently.
 *   **End-to-End Encryption**: Enforces mandatory TLS 1.2/1.3 encryption for all Client-Server and Admin-Server communications, ensuring traffic opacity.
 *   **Cross-Platform Compatibility**: Native support for Linux (including WSL) and Windows environments.
