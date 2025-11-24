@@ -15,12 +15,12 @@ use self::registry::CommandRegistry;
 pub async fn handle_authenticated_user(client: Arc<Client>, state: Arc<AppState>, registry: &CommandRegistry) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let banner = r#"
-    ██████╗ ██╗   ██╗███████╗████████╗███╗   ██╗███████╗████████╗
-    ██╔══██╗██║   ██║██╔════╝╚══██╔══╝████╗  ██║██╔════╝╚══██╔══╝
-    ██████╔╝██║   ██║███████╗   ██║   ██╔██╗ ██║█████╗     ██║   
-    ██╔══██╗██║   ██║╚════██║   ██║   ██║╚██╗██║██╔══╝     ██║   
-    ██║  ██║╚██████╔╝███████║   ██║   ██║ ╚████║███████╗   ██║   
-    ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═══╝╚══════╝   ╚═╝   
+    ╔════════════════════════════════════════════════════════════╗
+    ║                          RUSTNET                           ║
+    ║                 Secure Control Environment                 ║
+    ╟────────────────────────────────────────────────────────────╢
+    ║  System: Booting…                                          ║
+    ╚════════════════════════════════════════════════════════════╝
     "#;
     let gradient_banner = apply_ice_gradient(banner);
     client.write(format!("{}\n\r", gradient_banner).as_bytes()).await?;
