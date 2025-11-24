@@ -122,18 +122,4 @@ attack <method> <target_ip> <port> <duration>
 ```text
 attack UDP 192.168.1.50 80 60
 ```
-
-### Supported Attack Vectors
-
-| Category | Methods | Description |
-|----------|---------|-------------|
-| **Layer 4** | `UDP`, `TCP`, `SYN`, `ACK` | Standard volumetric packet floods. |
-| **Layer 4 (Adv)** | `UDPMAX`, `UDPSMART`, `GRE`, `ICMP` | Optimized high-throughput floods. |
-| **Amplification** | `DNS`, `DNSL4`, `AMPLIFICATION` | Reflection-based attacks (requires spoofing support). |
-| **Layer 7** | `HTTP`, `SLOWLORIS`, `STRESS` | Application layer resource exhaustion. |
-| **Protocol Specific** | `TLS`, `WEBSOCKET`, `SIP` | Targeted protocol floods. |
-| **Game Services** | `MINECRAFT`, `RAKNET`, `FIVEM`, `TS3`, `DISCORD` | Specialized payloads for game servers and VoIP. |
-| **Bypass** | `STD`, `VSE`, `OVH`, `NFO`, `BYPASS`, `CF`, `CFBYPASS` | Methods designed to evade specific mitigation filters. |
-
-
 This project is distributed under the MIT License. See the `LICENSE` file for details.
