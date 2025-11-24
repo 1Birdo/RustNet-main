@@ -46,47 +46,6 @@ graph TD
     Bot3 -- Attack Traffic --> Target
 ```
 
-### Server Module Structure
-```mermaid
-classDiagram
-    class AppState {
-        +Config config
-        +BotManager bot_manager
-        +ClientManager client_manager
-        +AttackManager attack_manager
-        +Database db_pool
-    }
-    
-    class ConnectionHandler {
-        +handle_user_connection()
-        +handle_bot_connection()
-    }
-    
-    class CommandRegistry {
-        +register_all()
-        +execute()
-    }
-    
-    class BotManager {
-        +bots: DashMap
-        +broadcast_attack()
-        +cleanup_dead_bots()
-    }
-    
-    class AttackManager {
-        +start_attack()
-        +process_queue()
-    }
-    
-    AppState *-- BotManager
-    AppState *-- ClientManager
-    AppState *-- AttackManager
-    ConnectionHandler --> AppState
-    ConnectionHandler --> CommandRegistry
-    CommandRegistry --> AttackManager
-    AttackManager --> BotManager
-```
-
 ### Attack Command Flow
 ```mermaid
 sequenceDiagram
