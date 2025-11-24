@@ -55,7 +55,8 @@ The server acts as the central controller. It requires a configuration file and 
 2.  **TLS Certificate Generation**:
     The server requires `cert.pem` and `key.pem` in the root directory. Generate self-signed certificates for secure communication:
     ```bash
-    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=RustNet Server"
+    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem 
+     -days 365 -nodes -subj "/CN=RustNet Server"
     ```
     *Note: The server can auto-generate these if missing (when `strict_tls = false`), but manual generation is recommended for production.*
 
