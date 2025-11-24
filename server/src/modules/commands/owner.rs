@@ -43,7 +43,7 @@ pub async fn handle_regbot_command(client: &Arc<Client>, state: &Arc<AppState>, 
     
     match state.bot_manager.register_bot(arch.clone()).await {
         Ok((_uuid, token)) => {
-            client.write(format!("\x1b[38;5;82m[✓] Bot registered successfully\n\rToken: {}\n\rArch: {}\n\r", token, arch).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;82m[✓] Bot registered successfully\n\r\x1b[38;5;196m[!] SAVE THIS TOKEN! IT CANNOT BE RECOVERED!\n\r\x1b[38;5;51mToken: {}\n\r\x1b[38;5;245mArch: {}\n\r", token, arch).as_bytes()).await?;
             
             let audit_event = AuditLog::new(client.user.username.clone(), "REGISTER_BOT".to_string(), "SUCCESS".to_string())
                 .with_target(arch);
@@ -510,6 +510,8 @@ pub async fn handle_tokens_command(client: &Arc<Client>, state: &Arc<AppState>) 
     let title = apply_ice_gradient("Registered Bot Tokens");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
+    client.write("  \x1b[38;5;245mBot ID                               | Arch   | Created    | Last Used\x1b[0m\n\r".as_bytes()).await?;
+    client.write("  \x1b[38;5;240m────────────────────────────────────────────────────────────────────────\x1b[0m\n\r".as_bytes()).await?;
     
     if tokens.is_empty() {
         client.write(b"  \x1b[38;5;245mNo tokens found\x1b[0m\n\r").await?;

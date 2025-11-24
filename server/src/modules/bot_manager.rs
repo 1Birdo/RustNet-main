@@ -76,7 +76,7 @@ pub struct BotManager {
     bots: Arc<DashMap<Uuid, Arc<Bot>>>,
     max_connections: usize,
     pool: SqlitePool,
-    telemetry_buffer: Arc<Mutex<Vec<(Uuid, f32, f32, DateTime<Utc>)>>>,
+    telemetry_buffer: Arc<Mutex<Vec<(Uuid, String, f32, f32, DateTime<Utc>)>>>,
 }
 
 impl BotManager {
@@ -238,9 +238,9 @@ impl BotManager {
         }
     }
     
-    pub async fn log_telemetry(&self, bot_id: Uuid, cpu: f32, mem: f32) {
+    pub async fn log_telemetry(&self, bot_id: Uuid, arch: String, cpu: f32, mem: f32) {
         let mut buffer = self.telemetry_buffer.lock().await;
-        buffer.push((bot_id, cpu, mem, Utc::now()));
+        buffer.push((bot_id, arch, cpu, mem, Utc::now()));
         
         // Flush if buffer gets too large
         if buffer.len() >= 100 {
@@ -260,9 +260,10 @@ impl BotManager {
         
         // Use a transaction for batch insert
         if let Ok(mut tx) = self.pool.begin().await {
-            for (bot_id, cpu, mem, time) in batch {
-                if let Err(e) = sqlx::query("INSERT OR REPLACE INTO bot_telemetry (bot_id, cpu_usage, memory_usage, last_updated) VALUES (?, ?, ?, ?)")
+            for (bot_id, arch, cpu, mem, time) in batch {
+                if let Err(e) = sqlx::query("INSERT OR REPLACE INTO bot_telemetry (bot_uuid, arch, cpu_usage, ram_usage, last_seen) VALUES (?, ?, ?, ?, ?)")
                     .bind(bot_id.to_string())
+                    .bind(arch)
                     .bind(cpu)
                     .bind(mem)
                     .bind(time)

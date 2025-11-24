@@ -407,6 +407,13 @@ pub async fn handle_methods_command(client: &Arc<Client>, state: &Arc<AppState>)
         ("SLOWLORIS", "Slowloris Attack"),
         ("STRESS", "HTTP Stress Test")
     ];
+
+    let game_methods = [
+        ("MINECRAFT", "Minecraft Server Flood"),
+        ("RAKNET", "RakNet Flood (MCPE/Terraria)"),
+        ("FIVEM", "FiveM Server Flood"),
+        ("TS3", "TeamSpeak 3 Flood")
+    ];
     
     client.write(b"  \x1b[38;5;39mLayer 4 Methods\x1b[0m\n\r").await?;
     for (name, desc) in l4_methods.iter() {
@@ -417,6 +424,12 @@ pub async fn handle_methods_command(client: &Arc<Client>, state: &Arc<AppState>)
     client.write(b"\n\r  \x1b[38;5;51mLayer 7 Methods\x1b[0m\n\r").await?;
     for (name, desc) in l7_methods.iter() {
         let name_gradient = apply_gradient(name, 51, 87);
+        client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", name_gradient, desc).as_bytes()).await?;
+    }
+
+    client.write(b"\n\r  \x1b[38;5;87mGame Methods\x1b[0m\n\r").await?;
+    for (name, desc) in game_methods.iter() {
+        let name_gradient = apply_gradient(name, 87, 123);
         client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", name_gradient, desc).as_bytes()).await?;
     }
     

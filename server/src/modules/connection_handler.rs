@@ -1,5 +1,5 @@
 use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, AsyncBufReadExt};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn, error, debug};
@@ -344,7 +344,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     }
 
     // Handle TLS wrapping
-    let mut conn: Box<dyn AsyncReadWrite> = if let Some(ref acceptor) = state.tls_acceptor {
+    let conn: Box<dyn AsyncReadWrite> = if let Some(ref acceptor) = state.tls_acceptor {
         match accept_tls_connection(acceptor, conn).await {
             Ok(tls_stream) => Box::new(tls_stream),
             Err(e) => {
@@ -358,22 +358,25 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     
     let bot_auth_timeout = Duration::from_secs(state.config.read().await.bot_auth_timeout_secs);
 
+    // Split connection immediately
+    let (reader, mut writer) = tokio::io::split(conn);
+    let mut reader = BufReader::new(reader);
+
     // Bot authentication: expect "AUTH <token>" as first message
-    let mut auth_buf = vec![0u8; 1024];
-    let n = match tokio::time::timeout(bot_auth_timeout, conn.read(&mut auth_buf)).await {
-        Ok(Ok(n)) => n,
+    let mut auth_line = String::new();
+    match tokio::time::timeout(bot_auth_timeout, reader.read_line(&mut auth_line)).await {
+        Ok(Ok(n)) if n > 0 => {},
         _ => {
-            warn!("Bot auth timeout from {}", addr);
+            warn!("Bot auth timeout or empty from {}", addr);
             return Ok(());
         }
     };
     
-    let auth_msg = String::from_utf8_lossy(&auth_buf[..n]);
-    let auth_parts: Vec<&str> = auth_msg.split_whitespace().collect();
+    let auth_parts: Vec<&str> = auth_line.split_whitespace().collect();
     
     if auth_parts.len() < 2 || auth_parts[0] != "AUTH" {
-        warn!("Invalid bot auth format from {}", addr);
-        let _ = conn.write_all(b"AUTH_FAILED\n").await;
+        warn!("Invalid bot auth format from {}: {:?}", addr, auth_line);
+        let _ = writer.write_all(b"AUTH_FAILED\n").await;
         return Ok(());
     }
     
@@ -387,8 +390,8 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     let (authenticated_bot_id, arch) = match state.bot_manager.verify_bot_token(auth_parts[1]).await {
         Some((id, arch)) => (id, arch),
         None => {
-            warn!("Invalid bot auth token from {}", addr);
-            let _ = conn.write_all(b"AUTH_FAILED\n").await;
+            warn!("Invalid bot auth token from {}: {}", addr, auth_parts[1]);
+            let _ = writer.write_all(b"AUTH_FAILED\n").await;
             
             // Log failed bot auth
             let audit = AuditLog::new(
@@ -403,7 +406,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     };
     
     // Send auth success
-    conn.write_all(b"AUTH_OK\n").await?;
+    writer.write_all(b"AUTH_OK\n").await?;
     info!("Bot {} (v{}) authenticated from {}", authenticated_bot_id, version, addr);
     
     // Log successful bot auth
@@ -417,6 +420,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     
     // Simple bot protocol: just track and relay commands
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<String>(100);
+    let bot_arch = arch.clone();
     let bot = Bot::new(addr, arch, version, cmd_tx);
     // Override bot ID with authenticated ID to ensure consistency
     {
@@ -464,9 +468,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
         }
     }
     
-    // Split connection for concurrent read/write
-    let (reader, mut writer) = tokio::io::split(conn);
-    let mut reader = BufReader::new(reader);
+    // Connection is already split and wrapped in BufReader
     
     // Send periodic PINGs and expect PONGs
     let bot_manager = state.bot_manager.clone();
@@ -525,7 +527,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
                                     let parts: Vec<&str> = line.split_whitespace().collect();
                                     if parts.len() >= 3 {
                                         if let (Ok(cpu), Ok(mem)) = (parts[1].parse::<f32>(), parts[2].parse::<f32>()) {
-                                            bot_manager.log_telemetry(bot_id, cpu, mem).await;
+                                            bot_manager.log_telemetry(bot_id, bot_arch.clone(), cpu, mem).await;
                                             bot_manager.update_bot_heartbeat(&bot_id).await;
                                         }
                                     }

