@@ -20,4 +20,3 @@ uuid = { workspace = true }
 num_cpus = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }
 sysinfo = "0.30"
-socket2 = { version = "0.5", features = ["all"] }

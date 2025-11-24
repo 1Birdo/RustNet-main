@@ -394,9 +394,13 @@ pub async fn handle_methods_command(client: &Arc<Client>, state: &Arc<AppState>)
     
     let l4_methods = [
         ("UDP", "UDP Flood"),
+        ("UDPMAX", "UDP Max Flood (MTU)"),
         ("TCP", "TCP Flood"),
         ("SYN", "SYN Flood"),
         ("ACK", "ACK Flood"),
+        ("ICMP", "ICMP Flood"),
+        ("GRE", "GRE Flood"),
+        ("CONNECTION", "TCP Connection Exhaustion"),
         ("VSE", "Valve Source Engine"),
         ("OVH", "OVH Bypass")
     ];
@@ -405,14 +409,20 @@ pub async fn handle_methods_command(client: &Arc<Client>, state: &Arc<AppState>)
         ("HTTP", "HTTP Flood"),
         ("CF-BYPASS", "Cloudflare Bypass"),
         ("SLOWLORIS", "Slowloris Attack"),
-        ("STRESS", "HTTP Stress Test")
+        ("STRESS", "HTTP Stress Test"),
+        ("DNS", "DNS Flood"),
+        ("WEBSOCKET", "WebSocket Flood"),
+        ("TLS", "SSL/TLS Flood"),
+        ("AMPLIFICATION", "DNS Amplification")
     ];
 
     let game_methods = [
         ("MINECRAFT", "Minecraft Server Flood"),
         ("RAKNET", "RakNet Flood (MCPE/Terraria)"),
         ("FIVEM", "FiveM Server Flood"),
-        ("TS3", "TeamSpeak 3 Flood")
+        ("TS3", "TeamSpeak 3 Flood"),
+        ("DISCORD", "Discord Voice Flood"),
+        ("SIP", "SIP VOIP Flood")
     ];
     
     client.write(b"  \x1b[38;5;39mLayer 4 Methods\x1b[0m\n\r").await?;

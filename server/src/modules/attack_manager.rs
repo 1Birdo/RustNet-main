@@ -11,6 +11,7 @@ use tracing::error;
 pub const VALID_ATTACK_METHODS: &[&str] = &[
     "UDP", "TCP", "HTTP", "SYN", "ACK", "STD", "VSE", "OVH", "NFO", "BYPASS", "TLS", "CF",
     "CFBYPASS", "SLOWLORIS", "STRESS", "MINECRAFT", "RAKNET", "FIVEM", "TS3",
+    "UDPMAX", "GRE", "ICMP", "DNS", "DNSL4", "WEBSOCKET", "AMPLIFICATION", "CONNECTION", "DISCORD", "SIP",
 ];
 
 #[derive(Debug, Clone)]

