@@ -9,7 +9,6 @@ login_magic_string = "loginforme"
 strict_tls = false
 terminal_width = 94
 terminal_height = 28
-
 [limits]
 max_bots = 10000
 session_timeout_secs = 3600

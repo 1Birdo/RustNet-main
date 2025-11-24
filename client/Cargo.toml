@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 authors = ["RustNet Contributors"]
 description = "Bot client for RustNet C&C framework"
-
 [dependencies]
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }

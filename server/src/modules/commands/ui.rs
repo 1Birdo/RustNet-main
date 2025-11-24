@@ -1,26 +1,17 @@
 use regex::Regex;
 use std::sync::Arc;
 use crate::modules::state::AppState;
-
-// ============= DYNAMIC TABLE RENDERING UTILITIES =============
-
-/// Get terminal width (default to 120 for full screen experience)
 pub async fn get_terminal_width(state: &Arc<AppState>) -> usize {
     state.config.read().await.terminal_width
 }
-
-/// Get terminal height (default to 32)
 pub async fn get_terminal_height(state: &Arc<AppState>) -> usize {
     state.config.read().await.terminal_height
 }
-
-/// Generate color gradient for string based on position
 pub fn apply_gradient(text: &str, start_color: u8, end_color: u8) -> String {
     let len = text.chars().count();
     if len == 0 {
         return String::new();
     }
-    
     let mut result = String::new();
     for (i, ch) in text.chars().enumerate() {
         let ratio = i as f32 / len.max(1) as f32;
@@ -30,13 +21,10 @@ pub fn apply_gradient(text: &str, start_color: u8, end_color: u8) -> String {
     result.push_str("\x1b[0m");
     result
 }
-
-/// Generate ice/water themed gradient
 pub fn apply_ice_gradient(text: &str) -> String {
     let colors = [195, 159, 123, 87, 51, 45, 39];
     let len = text.chars().count();
     if len == 0 { return String::new(); }
-    
     let mut result = String::new();
     for (i, ch) in text.chars().enumerate() {
         let position = i as f32 / len.max(1) as f32;
@@ -47,8 +35,6 @@ pub fn apply_ice_gradient(text: &str) -> String {
     result.push_str("\x1b[0m");
     result
 }
-
-/// Strip ANSI codes to get true text length
 #[allow(dead_code)]
 pub fn strip_ansi(text: &str) -> String {
     use std::sync::OnceLock;
@@ -58,19 +44,14 @@ pub fn strip_ansi(text: &str) -> String {
     });
     ansi_regex.replace_all(text, "").to_string()
 }
-
-/// Get visible length of text (excluding ANSI codes)
 #[allow(dead_code)]
 pub fn visible_len(text: &str) -> usize {
     strip_ansi(text).chars().count()
 }
-
-// Menu item structures for dynamic rendering
 pub struct MenuItem {
     pub cmd: &'static str,
     pub desc: &'static str,
 }
-
 pub const OWNER_COMMANDS: &[MenuItem] = &[
     MenuItem { cmd: "announce", desc: "Broadcast message" },
     MenuItem { cmd: "adduser", desc: "Add new user" },

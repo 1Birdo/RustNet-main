@@ -1,7 +1,6 @@
 [workspace]
 members = ["server", "client"]
 resolver = "2"
-
 [workspace.dependencies]
 tokio = { version = "1.43", features = ["full", "fs"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }

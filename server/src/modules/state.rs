@@ -11,7 +11,6 @@ use super::config::Config;
 use super::bot_manager::BotManager;
 use super::attack_manager::AttackManager;
 use super::rate_limiter::SimpleRateLimiter;
-
 pub struct AppState {
     pub config: RwLock<Config>,
     pub bot_manager: Arc<BotManager>,
@@ -26,7 +25,6 @@ pub struct AppState {
     pub whitelist: Arc<DashSet<IpAddr>>,
     pub blacklist: Arc<DashSet<IpAddr>>,
 }
-
 impl AppState {
     pub fn new(
         config: Config,
