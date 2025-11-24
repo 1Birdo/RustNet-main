@@ -2,14 +2,10 @@
 
 This is a improvised and just a overall better overhaul of BotnetGoV2.
 
-*   **High-Performance Architecture**: Leverages Rust's zero-cost abstractions and Tokio's asynchronous runtime to handle thousands of concurrent connections efficiently.
-*   **End-to-End Encryption**: Enforces mandatory TLS 1.2/1.3 encryption for all Client-Server and Admin-Server communications, ensuring traffic opacity.
+*   **High-Performance Architecture**
+*   **End-to-End Encryption**: Enforces encryption for all communications, ensuring traffic opacity.
 *   **Cross-Platform Compatibility**: Native support for Linux (including WSL) and Windows environments.
-*   **Modular Design**: Extensible architecture allowing for rapid integration of new attack vectors and command modules.
-*   **Comprehensive Attack Suite**:
-    *   **Layer 4**: UDP/TCP Floods, SYN/ACK Floods, DNS Amplification, GRE/ICMP Floods.
-    *   **Layer 7**: HTTP/HTTPS Floods, Slowloris, WebSocket Floods.
-    *   **Application Layer**: Specialized modules for game protocols (Minecraft, RakNet, Source Engine) and VoIP (TeamSpeak, Discord, SIP).
+*   **Modular Design**: 
 *   **Advanced Management**:
     *   Role-Based Access Control (RBAC) with hierarchical permissions (Owner, Admin, Ba   sic).
     *   Real-time bot health monitoring and telemetry.
