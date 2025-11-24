@@ -1,9 +1,3 @@
-# RustNet Framework
-
-**RustNet** is an enterprise-grade, asynchronous Command and Control (C2) framework engineered in Rust. Built upon the Tokio runtime, it delivers high-concurrency performance with minimal resource footprint, designed specifically for network stress testing and distributed system management.
-
-> **Legal Disclaimer**: This software is developed solely for educational purposes and authorized security auditing. The authors assume no liability for misuse. Users are responsible for ensuring compliance with all applicable laws and regulations.
-
 ## 🚀 Key Features
 
 *   **High-Performance Architecture**: Leverages Rust's zero-cost abstractions and Tokio's asynchronous runtime to handle thousands of concurrent connections efficiently.
@@ -183,14 +177,5 @@ attack UDP 192.168.1.50 80 60
 | **Game Services** | `MINECRAFT`, `RAKNET`, `FIVEM`, `TS3`, `DISCORD` | Specialized payloads for game servers and VoIP. |
 | **Bypass** | `STD`, `VSE`, `OVH`, `NFO`, `BYPASS`, `CF`, `CFBYPASS` | Methods designed to evade specific mitigation filters. |
 
-## 🤝 Contributing
-
-Contributions are welcome. Please adhere to the following guidelines:
-1.  Fork the repository.
-2.  Create a feature branch (`git checkout -b feature/NewModule`).
-3.  Commit your changes with descriptive messages.
-4.  Push to the branch and open a Pull Request.
-
-## 📄 License
 
 This project is distributed under the MIT License. See the `LICENSE` file for details.
