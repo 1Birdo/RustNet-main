@@ -1771,3 +1771,37 @@ async fn resolve_ipv4(target: &str, port: u16) -> Option<Ipv4Addr> {
         }
     }
 }
+
+fn build_udp_packet(src_ip: Ipv4Addr, dst_ip: Ipv4Addr, src_port: u16, dst_port: u16, payload: &[u8]) -> Vec<u8> {
+    let mut packet = Vec::with_capacity(20 + 8 + payload.len());
+    
+    // IPv4 Header (20 bytes)
+    packet.push(0x45);
+    packet.push(0x00);
+    let total_len = (20 + 8 + payload.len()) as u16;
+    packet.extend_from_slice(&total_len.to_be_bytes());
+    packet.extend_from_slice(&0x1234u16.to_be_bytes());
+    packet.extend_from_slice(&0x0000u16.to_be_bytes());
+    packet.push(64); // TTL
+    packet.push(17); // Protocol (UDP = 17)
+    packet.extend_from_slice(&0u16.to_be_bytes()); // Checksum
+    packet.extend_from_slice(&src_ip.octets());
+    packet.extend_from_slice(&dst_ip.octets());
+    
+    // IP Checksum
+    let ip_checksum = calculate_checksum(&packet[0..20]);
+    packet[10] = (ip_checksum >> 8) as u8;
+    packet[11] = (ip_checksum & 0xFF) as u8;
+    
+    // UDP Header (8 bytes)
+    packet.extend_from_slice(&src_port.to_be_bytes());
+    packet.extend_from_slice(&dst_port.to_be_bytes());
+    let udp_len = (8 + payload.len()) as u16;
+    packet.extend_from_slice(&udp_len.to_be_bytes());
+    packet.extend_from_slice(&0u16.to_be_bytes()); // Checksum (optional/zero)
+    
+    // Payload
+    packet.extend_from_slice(payload);
+    
+    packet
+}
