@@ -475,6 +475,38 @@ impl Command for QueueCommand {
         attack::handle_queue_command(client, state).await
     }
 }
+pub struct ClearCommand;
+#[async_trait]
+impl Command for ClearCommand {
+    fn name(&self) -> &'static str { "clear" }
+    fn description(&self) -> &'static str { "Clear the screen" }
+    fn required_level(&self) -> Level { Level::Basic }
+    async fn execute(&self, client: &Arc<Client>, _state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
+        client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
+        Ok(())
+    }
+}
+pub struct ClsCommand;
+#[async_trait]
+impl Command for ClsCommand {
+    fn name(&self) -> &'static str { "cls" }
+    fn description(&self) -> &'static str { "Clear the screen (alias)" }
+    fn required_level(&self) -> Level { Level::Basic }
+    async fn execute(&self, client: &Arc<Client>, _state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
+        client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
+        Ok(())
+    }
+}
+pub struct QuestionMarkCommand;
+#[async_trait]
+impl Command for QuestionMarkCommand {
+    fn name(&self) -> &'static str { "?" }
+    fn description(&self) -> &'static str { "Show help menu (alias)" }
+    fn required_level(&self) -> Level { Level::Basic }
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
+        general::handle_help_command(client, state).await
+    }
+}
 pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(HelpCommand));
     registry.register(Box::new(StatsCommand));
@@ -522,4 +554,7 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(StopCommand));
     registry.register(Box::new(HistoryCommand));
     registry.register(Box::new(QueueCommand));
+    registry.register(Box::new(ClearCommand));
+    registry.register(Box::new(ClsCommand));
+    registry.register(Box::new(QuestionMarkCommand));
 }

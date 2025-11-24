@@ -35,6 +35,20 @@ pub fn apply_ice_gradient(text: &str) -> String {
     result.push_str("\x1b[0m");
     result
 }
+pub fn apply_fire_gradient(text: &str) -> String {
+    let colors = [196, 202, 208, 214, 220];
+    let len = text.chars().count();
+    if len == 0 { return String::new(); }
+    let mut result = String::new();
+    for (i, ch) in text.chars().enumerate() {
+        let position = i as f32 / len.max(1) as f32;
+        let index = (position * (colors.len() - 1) as f32).round() as usize;
+        let color = colors[index.min(colors.len() - 1)];
+        result.push_str(&format!("\x1b[38;5;{}m{}", color, ch));
+    }
+    result.push_str("\x1b[0m");
+    result
+}
 #[allow(dead_code)]
 pub fn strip_ansi(text: &str) -> String {
     use std::sync::OnceLock;

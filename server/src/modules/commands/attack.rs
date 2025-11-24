@@ -127,7 +127,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
 pub async fn handle_ongoing_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let attacks = state.attack_manager.get_all_attacks().await;
-    let title = apply_ice_gradient("Ongoing Attacks");
+    let title = apply_fire_gradient("Ongoing Attacks");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if attacks.is_empty() {
@@ -193,7 +193,7 @@ pub async fn handle_stop_command(client: &Arc<Client>, state: &Arc<AppState>, pa
 pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let history = state.attack_manager.get_history(20).await;
-    let title = apply_ice_gradient("Attack History");
+    let title = apply_fire_gradient("Attack History");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let user_history: Vec<_> = history.iter()
@@ -222,7 +222,7 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
 pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     let queue_items = state.attack_manager.get_queue_items().await;
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Attack Queue");
+    let title = apply_fire_gradient("Attack Queue");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if queue_items.is_empty() {

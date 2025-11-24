@@ -7,7 +7,7 @@ use super::ui::*;
 use super::general::show_prompt;
 pub async fn handle_admin_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Admin Menu");
+    let title = apply_fire_gradient("Admin Menu");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let commands = [
@@ -169,7 +169,7 @@ pub async fn handle_banlist_command(client: &Arc<Client>, state: &Arc<AppState>)
     let now = chrono::Utc::now();
     let banned: Vec<&User> = users.iter().filter(|u| u.expire < now).collect();
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Banned Users");
+    let title = apply_fire_gradient("Banned Users");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if banned.is_empty() {

