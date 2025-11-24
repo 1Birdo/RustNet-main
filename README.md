@@ -38,24 +38,6 @@ graph TD
     Bot3 -- Attack Traffic --> Target
 ```
 
-### Attack Command Flow
-```mermaid
-sequenceDiagram
-    participant Admin
-    participant Server
-    participant Bot
-    participant Target
-    
-    Admin->>Server: attack UDP 1.2.3.4 80 60
-    Server->>Server: Validate & Queue Attack
-    Server->>Bot: ATTACK <id> UDP 1.2.3.4 80 60
-    Bot->>Bot: Check Resources & Semaphore
-    Bot->>Target: UDP Flood Traffic
-    Note over Bot,Target: Attack continues for duration
-    Bot->>Server: (Status Updates)
-    Server->>Admin: Attack Started / Status
-```
-
 *   **OpenSSL**: Required for generating TLS certificates and establishing secure admin connections.
     *   *Linux*: `sudo apt install openssl libssl-dev`
     *   *Windows*: Install via vcpkg or Chocolatey.
@@ -113,10 +95,8 @@ The client connects to the server to execute commands.
     ./target/release/rustnet-client
     ```
 
-## 💻 Usage & Administration
 
 ### Connecting to the Server
-
 Since the server enforces TLS, standard Telnet/Netcat clients will not work. You must use a TLS-capable client like OpenSSL.
 
 **Connection Command:**
@@ -129,14 +109,6 @@ openssl s_client -connect localhost:1420 -quiet
 2.  **Magic String**: You must immediately type the configured magic string (Default: `loginforme`) and press Enter.
 3.  **Credentials**: Enter your Username and Password when prompted.
 
-### Command Reference
-
-#### General Management
-*   `help`: Display the available command menu.
-*   `bots`: List all connected bots and their status.
-*   `methods`: Display all available attack vectors.
-*   `ongoing`: View currently active attacks.
-*   `stats`: View server resource usage and uptime.
 
 #### Attack Execution
 
