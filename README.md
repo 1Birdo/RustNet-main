@@ -13,31 +13,6 @@ This is a improvised and just a overall better overhaul of BotnetGoV2.
 
 ##  System Architecture
 
-### Network Topology
-```mermaid
-graph TD
-    User[Admin/User] -- TLS/TCP (Port 1420) --> Server[C2 Server]
-    Server -- SQLite --> DB[(Database)]
-    
-    subgraph Botnet
-        Bot1[Bot Client 1]
-        Bot2[Bot Client 2]
-        Bot3[Bot Client N]
-    end
-    
-    Bot1 -- TLS/TCP (Port 7002) --> Server
-    Bot2 -- TLS/TCP (Port 7002) --> Server
-    Bot3 -- TLS/TCP (Port 7002) --> Server
-    
-    subgraph Target Infrastructure
-        Target[Target System]
-    end
-    
-    Bot1 -- Attack Traffic --> Target
-    Bot2 -- Attack Traffic --> Target
-    Bot3 -- Attack Traffic --> Target
-```
-
 *   **OpenSSL**: Required for generating TLS certificates and establishing secure admin connections.
     *   *Linux*: `sudo apt install openssl libssl-dev`
     *   *Windows*: Install via vcpkg or Chocolatey.
@@ -122,4 +97,30 @@ attack <method> <target_ip> <port> <duration>
 ```text
 attack UDP 192.168.1.50 80 60
 ```
+
+### Network Topology
+```mermaid
+graph TD
+    User[Admin/User] -- TLS/TCP (Port 1420) --> Server[C2 Server]
+    Server -- SQLite --> DB[(Database)]
+    
+    subgraph Botnet
+        Bot1[Bot Client 1]
+        Bot2[Bot Client 2]
+        Bot3[Bot Client N]
+    end
+    
+    Bot1 -- TLS/TCP (Port 7002) --> Server
+    Bot2 -- TLS/TCP (Port 7002) --> Server
+    Bot3 -- TLS/TCP (Port 7002) --> Server
+    
+    subgraph Target Infrastructure
+        Target[Target System]
+    end
+    
+    Bot1 -- Attack Traffic --> Target
+    Bot2 -- Attack Traffic --> Target
+    Bot3 -- Attack Traffic --> Target
+```
+
 This project is distributed under the MIT License. See the `LICENSE` file for details.
