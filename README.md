@@ -1,4 +1,4 @@
-## 🚀 Key Features
+## Key Features
 
 *   **High-Performance Architecture**: Leverages Rust's zero-cost abstractions and Tokio's asynchronous runtime to handle thousands of concurrent connections efficiently.
 *   **End-to-End Encryption**: Enforces mandatory TLS 1.2/1.3 encryption for all Client-Server and Admin-Server communications, ensuring traffic opacity.
@@ -13,7 +13,7 @@
     *   Real-time bot health monitoring and telemetry.
     *   Persistent SQLite database for user management and audit logging.
 
-## 📊 System Architecture
+##  System Architecture
 
 ### Network Topology
 ```mermaid
@@ -58,23 +58,11 @@ sequenceDiagram
     Server->>Admin: Attack Started / Status
 ```
 
-## 🛠️ Prerequisites
-
-*   **Rust Toolchain**: Latest stable release (via [rustup](https://rustup.rs/)).
 *   **OpenSSL**: Required for generating TLS certificates and establishing secure admin connections.
     *   *Linux*: `sudo apt install openssl libssl-dev`
     *   *Windows*: Install via vcpkg or Chocolatey.
 
-## 📦 Installation & Deployment
-
-### 1. Repository Setup
-
-```bash
-git clone https://github.com/yourusername/RustNet.git
-cd RustNet
-```
-
-### 2. Server Configuration
+### Server Configuration
 
 The server acts as the central controller. It requires a configuration file and TLS certificates.
 
@@ -153,7 +141,6 @@ openssl s_client -connect localhost:1420 -quiet
 *   `stats`: View server resource usage and uptime.
 
 #### Attack Execution
-The syntax for launching attacks is strict.
 
 **Syntax:**
 ```text
