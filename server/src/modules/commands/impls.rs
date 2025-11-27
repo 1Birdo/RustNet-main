@@ -113,7 +113,7 @@ pub struct RulesCommand;
 #[async_trait]
 impl Command for RulesCommand {
     fn name(&self) -> &'static str { "rules" }
-    fn description(&self) -> &'static str { "Show server rules" }
+    fn description(&self) -> &'static str { "Show server usage policy" }
     fn required_level(&self) -> Level { Level::Basic }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         general::handle_rules_command(client, state).await
@@ -132,8 +132,8 @@ impl Command for AdminCommand {
 pub struct BotsCommand;
 #[async_trait]
 impl Command for BotsCommand {
-    fn name(&self) -> &'static str { "bots" }
-    fn description(&self) -> &'static str { "List connected bots" }
+    fn name(&self) -> &'static str { "nodes" }
+    fn description(&self) -> &'static str { "List connected nodes" }
     fn required_level(&self) -> Level { Level::Admin }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         admin::handle_listbots_command(client, state).await
@@ -142,8 +142,8 @@ impl Command for BotsCommand {
 pub struct KickCommand;
 #[async_trait]
 impl Command for KickCommand {
-    fn name(&self) -> &'static str { "kick" }
-    fn description(&self) -> &'static str { "Kick a user" }
+    fn name(&self) -> &'static str { "disconnect" }
+    fn description(&self) -> &'static str { "Disconnect a user" }
     fn required_level(&self) -> Level { Level::Admin }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         admin::handle_kick_command(client, state).await
@@ -152,8 +152,8 @@ impl Command for KickCommand {
 pub struct BanCommand;
 #[async_trait]
 impl Command for BanCommand {
-    fn name(&self) -> &'static str { "ban" }
-    fn description(&self) -> &'static str { "Ban a user" }
+    fn name(&self) -> &'static str { "suspend" }
+    fn description(&self) -> &'static str { "Suspend a user" }
     fn required_level(&self) -> Level { Level::Admin }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         admin::handle_ban_command(client, state).await
@@ -162,8 +162,8 @@ impl Command for BanCommand {
 pub struct UnbanCommand;
 #[async_trait]
 impl Command for UnbanCommand {
-    fn name(&self) -> &'static str { "unban" }
-    fn description(&self) -> &'static str { "Unban a user" }
+    fn name(&self) -> &'static str { "unsuspend" }
+    fn description(&self) -> &'static str { "Unsuspend a user" }
     fn required_level(&self) -> Level { Level::Admin }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         admin::handle_unban_command(client, state).await
@@ -172,8 +172,8 @@ impl Command for UnbanCommand {
 pub struct BanListCommand;
 #[async_trait]
 impl Command for BanListCommand {
-    fn name(&self) -> &'static str { "banlist" }
-    fn description(&self) -> &'static str { "List banned users" }
+    fn name(&self) -> &'static str { "suspendlist" }
+    fn description(&self) -> &'static str { "List suspended users" }
     fn required_level(&self) -> Level { Level::Admin }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         admin::handle_banlist_command(client, state).await
@@ -238,8 +238,8 @@ impl Command for LockCommand {
 pub struct BotCountCommand;
 #[async_trait]
 impl Command for BotCountCommand {
-    fn name(&self) -> &'static str { "botcount" }
-    fn description(&self) -> &'static str { "Show bot statistics" }
+    fn name(&self) -> &'static str { "nodecount" }
+    fn description(&self) -> &'static str { "Show node statistics" }
     fn required_level(&self) -> Level { Level::Admin }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         admin::handle_botcount_command(client, state).await
@@ -268,8 +268,8 @@ impl Command for OwnerCommand {
 pub struct RegBotCommand;
 #[async_trait]
 impl Command for RegBotCommand {
-    fn name(&self) -> &'static str { "regbot" }
-    fn description(&self) -> &'static str { "Register a new bot" }
+    fn name(&self) -> &'static str { "regnode" }
+    fn description(&self) -> &'static str { "Register a new node" }
     fn required_level(&self) -> Level { Level::Owner }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
         owner::handle_regbot_command(client, state, &args).await
@@ -279,7 +279,7 @@ pub struct KillAllCommand;
 #[async_trait]
 impl Command for KillAllCommand {
     fn name(&self) -> &'static str { "killall" }
-    fn description(&self) -> &'static str { "Kill all attacks" }
+    fn description(&self) -> &'static str { "Stop all attacks" }
     fn required_level(&self) -> Level { Level::Owner }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         owner::handle_killall_command(client, state).await
@@ -399,7 +399,7 @@ pub struct TokensCommand;
 #[async_trait]
 impl Command for TokensCommand {
     fn name(&self) -> &'static str { "tokens" }
-    fn description(&self) -> &'static str { "List bot tokens" }
+    fn description(&self) -> &'static str { "List node tokens" }
     fn required_level(&self) -> Level { Level::Owner }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, _args: Vec<&str>) -> Result<()> {
         owner::handle_tokens_command(client, state).await
@@ -409,7 +409,7 @@ pub struct RevokeCommand;
 #[async_trait]
 impl Command for RevokeCommand {
     fn name(&self) -> &'static str { "revoke" }
-    fn description(&self) -> &'static str { "Revoke bot token" }
+    fn description(&self) -> &'static str { "Revoke node token" }
     fn required_level(&self) -> Level { Level::Owner }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
         owner::handle_revoke_command(client, state, &args).await
@@ -418,8 +418,8 @@ impl Command for RevokeCommand {
 pub struct BotQueueCommand;
 #[async_trait]
 impl Command for BotQueueCommand {
-    fn name(&self) -> &'static str { "botqueue" }
-    fn description(&self) -> &'static str { "Queue command for bot" }
+    fn name(&self) -> &'static str { "nodequeue" }
+    fn description(&self) -> &'static str { "Queue command for node" }
     fn required_level(&self) -> Level { Level::Owner }
     async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
         owner::handle_bot_queue_command(client, state, &args).await

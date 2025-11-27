@@ -9,17 +9,17 @@ use super::ui::*;
 use super::general::show_prompt;
 pub async fn handle_owner_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Owner Menu");
+    let title = apply_ice_gradient("System Owner Controls");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
-    let owner_title = apply_ice_gradient("Owner Commands");
+    let owner_title = apply_ice_gradient("System Management");
     client.write(format!("  {}\n\r", owner_title).as_bytes()).await?;
     for item in OWNER_COMMANDS.iter() {
         let cmd_gradient = apply_gradient(item.cmd, 39, 51);
         client.write(format!("  \x1b[38;5;245m{:<15} : \x1b[0m{}\n\r", cmd_gradient, item.desc).as_bytes()).await?;
     }
     client.write(b"\n\r").await?;
-    client.set_breadcrumb("Home > Owner Menu").await;
+    client.set_breadcrumb("Home > System Owner Controls").await;
     show_prompt(client, state).await?;
     Ok(())
 }
@@ -27,20 +27,20 @@ pub async fn handle_regbot_command(client: &Arc<Client>, state: &Arc<AppState>, 
     let arch = match parts.get(1) {
         Some(a) => a.to_string(),
         None => {
-            client.write(b"\x1b[38;5;196m[X] Usage: regbot <arch>\n\r").await?;
-            client.write(b"\x1b[38;5;245mExample: regbot x86_64\n\r").await?;
+            client.write(b"\x1b[38;5;196m[X] Usage: regnode <arch>\n\r").await?;
+            client.write(b"\x1b[38;5;245mExample: regnode x86_64\n\r").await?;
             return Ok(());
         }
     };
     match state.bot_manager.register_bot(arch.clone()).await {
         Ok((_uuid, token)) => {
-            client.write(format!("\x1b[38;5;82m[✓] Bot registered successfully\n\r\x1b[38;5;196m[!] SAVE THIS TOKEN! IT CANNOT BE RECOVERED!\n\r\x1b[38;5;51mToken: {}\n\r\x1b[38;5;245mArch: {}\n\r", token, arch).as_bytes()).await?;
-            let audit_event = AuditLog::new(client.user.username.clone(), "REGISTER_BOT".to_string(), "SUCCESS".to_string())
+            client.write(format!("\x1b[38;5;82m[✓] Node registered successfully\n\r\x1b[38;5;196m[!] SAVE THIS TOKEN! IT CANNOT BE RECOVERED!\n\r\x1b[38;5;51mToken: {}\n\r\x1b[38;5;245mArch: {}\n\r", token, arch).as_bytes()).await?;
+            let audit_event = AuditLog::new(client.user.username.clone(), "REGISTER_NODE".to_string(), "SUCCESS".to_string())
                 .with_target(arch);
             let _ = log_audit_event(audit_event, &state.pool).await;
         }
         Err(e) => {
-            client.write(format!("\x1b[38;5;196m[X] Failed to register bot: {}\n\r", e).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;196m[X] Failed to register node: {}\n\r", e).as_bytes()).await?;
         }
     }
     Ok(())
@@ -51,9 +51,9 @@ pub async fn handle_killall_command(client: &Arc<Client>, state: &Arc<AppState>)
     for id in stopped_ids {
         state.bot_manager.broadcast_stop(id).await;
     }
-    client.write(format!("\x1b[38;5;82m[✓] Stopped all {} active attacks\n\r", count).as_bytes()).await?;
-    let audit_event = AuditLog::new(client.user.username.clone(), "KILL_ALL_ATTACKS".to_string(), "SUCCESS".to_string())
-        .with_target(format!("{} attacks", count));
+    client.write(format!("\x1b[38;5;82m[✓] Stopped all {} active audits\n\r", count).as_bytes()).await?;
+    let audit_event = AuditLog::new(client.user.username.clone(), "STOP_ALL_AUDITS".to_string(), "SUCCESS".to_string())
+        .with_target(format!("{} audits", count));
     let _ = log_audit_event(audit_event, &state.pool).await;
     Ok(())
 }
@@ -179,7 +179,7 @@ pub async fn handle_db_command(client: &Arc<Client>, state: &Arc<AppState>, part
             let confirm = client.read_line().await?.trim().to_lowercase();
             if confirm == "y" {
                 if let Err(e) = sqlx::query("DELETE FROM attacks").execute(&state.pool).await {
-                    client.write(format!("\x1b[38;5;196m[X] Failed to clear attacks: {}\n\r", e).as_bytes()).await?;
+                    client.write(format!("\x1b[38;5;196m[X] Failed to clear audits: {}\n\r", e).as_bytes()).await?;
                 }
                 if let Err(e) = sqlx::query("DELETE FROM audit_logs").execute(&state.pool).await {
                     client.write(format!("\x1b[38;5;196m[X] Failed to clear logs: {}\n\r", e).as_bytes()).await?;
@@ -419,13 +419,13 @@ pub async fn handle_config_command(client: &Arc<Client>, state: &Arc<AppState>, 
 pub async fn handle_tokens_command(client: &Arc<Client>, state: &Arc<AppState>) -> Result<()> {
     let tokens = state.bot_manager.list_tokens().await;
     client.write(b"\x1b[2J\x1b[3J\x1b[H").await?;
-    let title = apply_ice_gradient("Registered Bot Tokens");
+    let title = apply_ice_gradient("Registered Node Tokens");
     client.write(format!("\n\r  {}\n\r", title).as_bytes()).await?;
     client.write("  \x1b[38;5;240m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\r".as_bytes()).await?;
-    client.write("  \x1b[38;5;245mBot ID                               | Arch   | Created    | Last Used\x1b[0m\n\r".as_bytes()).await?;
+    client.write("  \x1b[38;5;245mNode ID                               | Arch   | Created    | Last Used\x1b[0m\n\r".as_bytes()).await?;
     client.write("  \x1b[38;5;240m────────────────────────────────────────────────────────────────────────\x1b[0m\n\r".as_bytes()).await?;
     if tokens.is_empty() {
-        client.write(b"  \x1b[38;5;245mNo tokens found\x1b[0m\n\r").await?;
+        client.write(b"  \x1b[38;5;245mNo active tokens found\x1b[0m\n\r").await?;
     } else {
         for token in tokens {
             let last_used = token.last_used.map(|t| t.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_else(|| "Never".to_string());
@@ -444,7 +444,7 @@ pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, 
     let bot_id_str = match parts.get(1) {
         Some(id) => id,
         None => {
-            client.write(b"\x1b[38;5;196m[X] Usage: revoke <bot_id>\n\r").await?;
+            client.write(b"\x1b[38;5;196m[X] Usage: revoke <node_id>\n\r").await?;
             client.write(b"\x1b[38;5;245mExample: revoke 550e8400-e29b-41d4-a716-446655440000\n\r").await?;
             return Ok(());
         }
@@ -452,13 +452,13 @@ pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, 
     let bot_id = match uuid::Uuid::parse_str(bot_id_str) {
         Ok(id) => id,
         Err(_) => {
-            client.write(b"\x1b[38;5;196m[X] Invalid Bot ID format\n\r").await?;
+            client.write(b"\x1b[38;5;196m[X] Invalid Node ID format\n\r").await?;
             return Ok(());
         }
     };
     match state.bot_manager.revoke_token(bot_id).await {
         Ok(_) => {
-            client.write(format!("\x1b[38;5;82m[✓] Token revoked for bot {}\n\r", bot_id).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;82m[✓] Token revoked for node {}\n\r", bot_id).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "REVOKE_TOKEN".to_string(), "SUCCESS".to_string())
                 .with_target(bot_id.to_string());
             let _ = log_audit_event(audit_event, &state.pool).await;
@@ -471,7 +471,7 @@ pub async fn handle_revoke_command(client: &Arc<Client>, state: &Arc<AppState>, 
 }
 pub async fn handle_bot_queue_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     if parts.len() < 3 {
-        client.write(b"\x1b[38;5;196m[X] Usage: queue <bot_id> <command>\n\r").await?;
+        client.write(b"\x1b[38;5;196m[X] Usage: queue <node_id> <command>\n\r").await?;
         client.write(b"\x1b[38;5;245mExample: queue 550e8400-e29b-41d4-a716-446655440000 ping 8.8.8.8\n\r").await?;
         return Ok(());
     }
@@ -480,13 +480,13 @@ pub async fn handle_bot_queue_command(client: &Arc<Client>, state: &Arc<AppState
     let bot_id = match uuid::Uuid::parse_str(bot_id_str) {
         Ok(id) => id,
         Err(_) => {
-            client.write(b"\x1b[38;5;196m[X] Invalid Bot ID format\n\r").await?;
+            client.write(b"\x1b[38;5;196m[X] Invalid Node ID format\n\r").await?;
             return Ok(());
         }
     };
     match state.bot_manager.queue_command(bot_id, &command).await {
         Ok(_) => {
-            client.write(format!("\x1b[38;5;82m[✓] Command queued for bot {}\n\r", bot_id).as_bytes()).await?;
+            client.write(format!("\x1b[38;5;82m[✓] Command queued for node {}\n\r", bot_id).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "QUEUE_COMMAND".to_string(), "SUCCESS".to_string())
                 .with_target(format!("{} -> {}", bot_id, command));
             let _ = log_audit_event(audit_event, &state.pool).await;
