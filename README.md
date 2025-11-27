@@ -64,7 +64,7 @@ The client connects to the server to execute commands.
     Create the following files in the client's execution directory:
     *   `c2_address.txt`: The Server IP and Bot Port (e.g., `127.0.0.1:7002`).
     *   `bot_token.txt`: A unique authentication token.
-        *   *Generation*: Log into the server as Owner and run `regbot <arch>` to generate a valid token.
+        *   *Generation*: Log into the server as Owner and run `regnode <arch>` to generate a valid token.
 
 3.  **Launch**:
     ```bash

@@ -1,8 +1,8 @@
 # Bot Authentication Token
 # 
 # Instructions:
-# 1. On the server, run: !regbot <architecture>
-#    Example: !regbot x86_64
+# 1. On the server, run: regnode <architecture>
+#    Example: regnode x86_64
 # 
 # 2. Copy the token displayed (shown only once!)
 # 

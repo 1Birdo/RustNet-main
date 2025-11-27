@@ -1,6 +1,5 @@
 use std::net::IpAddr;
 use chrono::{Utc, Duration};
-use std::sync::Arc;
 use sqlx::SqlitePool;
 use tracing::error;
 

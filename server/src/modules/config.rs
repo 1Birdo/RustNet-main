@@ -326,13 +326,13 @@ impl Config {
             user_port: u16,
             bot_port: u16,
             enable_tls: bool,
+            cert_path: &'a str,
+            key_path: &'a str,
+            deployment_mode: &'a str,
             strict_tls: bool,
             terminal_width: usize,
             terminal_height: usize,
             login_magic_string: &'a str,
-        }
-        #[derive(Serialize)]
-        struct LimitsConfig {usize,
         }
         #[derive(Serialize)]
         struct LimitsConfig {
@@ -356,12 +356,12 @@ impl Config {
                 enable_tls: self.enable_tls,
                 cert_path: &self.cert_path,
                 key_path: &self.key_path,
+                deployment_mode: &self.deployment_mode,
                 strict_tls: self.strict_tls,
                 terminal_width: self.terminal_width,
                 terminal_height: self.terminal_height,
                 login_magic_string: &self.login_magic_string,
             },
-            limits: LimitsConfig {
             limits: LimitsConfig {
                 max_bots: self.max_bot_connections,
                 session_timeout_secs: self.session_timeout_secs,

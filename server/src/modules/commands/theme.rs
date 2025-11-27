@@ -1,13 +1,17 @@
+#[allow(dead_code)]
 pub struct Theme {
     pub primary: u8,
     pub secondary: u8,
     pub accent: u8,
     pub error: u8,
     pub success: u8,
+    pub warning: u8,
+    pub info: u8,
     pub text: u8,
     pub dim: u8,
 }
 
+#[allow(dead_code)]
 impl Theme {
     pub fn default() -> Self {
         Self {
@@ -16,6 +20,8 @@ impl Theme {
             accent: 45,    // Light Blue
             error: 196,    // Red
             success: 82,   // Green
+            warning: 226,  // Yellow
+            info: 39,      // Blue
             text: 255,     // White
             dim: 245,      // Grey
         }
@@ -28,6 +34,8 @@ impl Theme {
             accent: 118,
             error: 196,
             success: 46,
+            warning: 226,
+            info: 46,
             text: 120,
             dim: 22,
         }
@@ -40,6 +48,8 @@ pub const CURRENT_THEME: Theme = Theme {
     accent: 45,
     error: 196,
     success: 82,
+    warning: 226,
+    info: 39,
     text: 255,
     dim: 245,
 };

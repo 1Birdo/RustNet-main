@@ -109,6 +109,7 @@ pub fn format_warning(msg: &str) -> String {
     format!("\x1b[38;5;{}m[!] {}\n\r", CURRENT_THEME.warning, msg)
 }
 
+#[allow(dead_code)]
 pub fn format_info(msg: &str) -> String {
     format!("\x1b[38;5;{}m[*] {}\n\r", CURRENT_THEME.info, msg)
 }

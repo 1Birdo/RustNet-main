@@ -170,7 +170,7 @@ use flate2::Compression;
 
 // ...existing code...
 
-    let state_clone = state.clone();
+    let _state_clone = state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(3600 * 6)); // Every 6 hours
         loop {
