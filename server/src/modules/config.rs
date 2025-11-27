@@ -155,12 +155,12 @@ impl Config {
             config.key_path = key.to_string();
         }
         if let Some(mode) = server_section.get("deployment_mode").and_then(|v| v.as_str()) {
-        if let Some(mode) = server_section.get("deployment_mode").and_then(|v| v.as_str()) {
             config.deployment_mode = mode.to_string();
         }
         if let Some(strict) = server_section.get("strict_tls").and_then(|v| v.as_bool()) {
             config.strict_tls = strict;
-        }f let Some(width) = server_section.get("terminal_width").and_then(|v| v.as_integer()) {
+        }
+        if let Some(width) = server_section.get("terminal_width").and_then(|v| v.as_integer()) {
             config.terminal_width = width as usize;
         }
         if let Some(height) = server_section.get("terminal_height").and_then(|v| v.as_integer()) {
@@ -240,6 +240,10 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(default_handshake_timeout_secs),
+            bot_auth_timeout_secs: env::var("BOT_AUTH_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(default_bot_auth_timeout_secs),
             strict_tls: env::var("STRICT_TLS")
                 .ok()
                 .and_then(|s| s.parse().ok())

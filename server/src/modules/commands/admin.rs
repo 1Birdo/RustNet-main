@@ -100,14 +100,14 @@ pub async fn handle_kick_command(client: &Arc<Client>, state: &Arc<AppState>) ->
             client.write(b"\x1b[38;5;196m[X] You cannot disconnect the owner\n\r").await?;
             return Ok(());
         }
-        target.write(b"\n\r\x1b[38;5;196m[!] You have been disconnected by an administrator\n\r").await?;
+        target.write(format_warning("You have been disconnected by an administrator").as_bytes()).await?;
         state.client_manager.remove_client(&target.id).await;
-        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been disconnected\n\r", username).as_bytes()).await?;
+        client.write(format_success(&format!("User '{}' has been disconnected", username)).as_bytes()).await?;
         let audit_event = AuditLog::new(client.user.username.clone(), "DISCONNECT_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
         let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
-        client.write(format!("\x1b[38;5;196m[X] User '{}' not found or not online\n\r", username).as_bytes()).await?;
+        client.write(format_error(&format!("User '{}' not found or not online", username)).as_bytes()).await?;
     }
     Ok(())
 }
@@ -120,27 +120,27 @@ pub async fn handle_ban_command(client: &Arc<Client>, state: &Arc<AppState>) -> 
         return Ok(());
     }
     if username == client.user.username {
-        client.write(b"\x1b[38;5;196m[X] You cannot suspend yourself\n\r").await?;
+        client.write(format_error("You cannot suspend yourself").as_bytes()).await?;
         return Ok(());
     }
     if let Ok(Some(user)) = state.user_manager.get_user(&username).await {
         if user.get_level() == Level::Owner {
-            client.write(b"\x1b[38;5;196m[X] You cannot suspend the owner\n\r").await?;
+            client.write(format_error("You cannot suspend the owner").as_bytes()).await?;
             return Ok(());
         }
         let expire = chrono::Utc::now() - chrono::Duration::days(1);
         state.user_manager.update_user(&username, None, Some(expire)).await?;
         let clients = state.client_manager.get_all_clients().await;
         if let Some(target) = clients.iter().find(|c| c.user.username == username) {
-            target.write(b"\n\r\x1b[38;5;196m[!] Your account has been suspended\n\r").await?;
+            target.write(format_warning("Your account has been suspended").as_bytes()).await?;
             state.client_manager.remove_client(&target.id).await;
         }
-        client.write(format!("\x1b[38;5;82m[✓] User '{}' has been suspended\n\r", username).as_bytes()).await?;
+        client.write(format_success(&format!("User '{}' has been suspended", username)).as_bytes()).await?;
         let audit_event = AuditLog::new(client.user.username.clone(), "SUSPEND_USER".to_string(), "SUCCESS".to_string())
             .with_target(username.clone());
         let _ = log_audit_event(audit_event, &state.pool).await;
     } else {
-        client.write(format!("\x1b[38;5;196m[X] User '{}' not found\n\r", username).as_bytes()).await?;
+        client.write(format_error(&format!("User '{}' not found", username)).as_bytes()).await?;
     }
     Ok(())
 }

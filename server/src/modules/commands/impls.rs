@@ -507,6 +507,16 @@ impl Command for QuestionMarkCommand {
         general::handle_help_command(client, state).await
     }
 }
+pub struct UpdateCommand;
+#[async_trait]
+impl Command for UpdateCommand {
+    fn name(&self) -> &'static str { "update" }
+    fn description(&self) -> &'static str { "Update all nodes" }
+    fn required_level(&self) -> Level { Level::Owner }
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
+        owner::handle_update_command(client, state, &args).await
+    }
+}
 pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(HelpCommand));
     registry.register(Box::new(StatsCommand));
@@ -557,4 +567,5 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(ClearCommand));
     registry.register(Box::new(ClsCommand));
     registry.register(Box::new(QuestionMarkCommand));
+    registry.register(Box::new(UpdateCommand));
 }

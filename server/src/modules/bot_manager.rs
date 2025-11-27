@@ -343,6 +343,20 @@ impl BotManager {
         }
         commands
     }
+    pub async fn broadcast_update(&self, url: &str, hash: &str) {
+        let command = format!("!update {} {}\n", url, hash);
+        let bots = self.get_all_bots().await;
+        stream::iter(bots)
+            .for_each_concurrent(1000, |bot| {
+                let cmd = command.clone();
+                async move {
+                    if let Err(e) = bot.cmd_tx.send(cmd).await {
+                        debug!("Failed to send update command to bot: {}", e);
+                    }
+                }
+            })
+            .await;
+    }
 }
 fn generate_secure_token(length: usize) -> String {
     use rand::Rng;

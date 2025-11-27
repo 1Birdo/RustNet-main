@@ -5,6 +5,7 @@ pub mod owner;
 pub mod attack;
 pub mod registry;
 pub mod impls;
+pub mod theme;
 use std::sync::Arc;
 use crate::modules::client_manager::Client;
 use crate::modules::state::AppState;

