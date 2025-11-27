@@ -45,6 +45,8 @@ pub struct Config {
     pub terminal_width: usize,
     #[serde(default = "default_terminal_height")]
     pub terminal_height: usize,
+    #[serde(default = "default_login_magic_string")]
+    pub login_magic_string: String,
 }
 fn default_user_server_ip() -> String { "0.0.0.0".to_string() }
 fn default_bot_server_ip() -> String { "0.0.0.0".to_string() }
@@ -67,6 +69,7 @@ fn default_strict_tls() -> bool { false }
 fn default_rate_limit_per_minute() -> u32 { 10 }
 fn default_terminal_width() -> usize { 90 }
 fn default_terminal_height() -> usize { 32 }
+fn default_login_magic_string() -> String { "loginforme".to_string() }
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -91,6 +94,7 @@ impl Default for Config {
             rate_limit_per_minute: default_rate_limit_per_minute(),
             terminal_width: default_terminal_width(),
             terminal_height: default_terminal_height(),
+            login_magic_string: default_login_magic_string(),
         }
     }
 }
@@ -165,6 +169,9 @@ impl Config {
         }
         if let Some(height) = server_section.get("terminal_height").and_then(|v| v.as_integer()) {
             config.terminal_height = height as usize;
+        }
+        if let Some(magic) = server_section.get("login_magic_string").and_then(|v| v.as_str()) {
+            config.login_magic_string = magic.to_string();
         }
         if let Some(limits) = limits_section {
             if let Some(max) = limits.get("max_bots").and_then(|v| v.as_integer()) {
@@ -260,6 +267,7 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(default_terminal_height),
+            login_magic_string: env::var("LOGIN_MAGIC_STRING").unwrap_or_else(|_| default_login_magic_string()),
         }
     }
     fn from_json_file(path: &str) -> Result<Self, std::io::Error> {
@@ -318,12 +326,13 @@ impl Config {
             user_port: u16,
             bot_port: u16,
             enable_tls: bool,
-            cert_path: &'a str,
-            key_path: &'a str,
-            deployment_mode: &'a str,
             strict_tls: bool,
             terminal_width: usize,
             terminal_height: usize,
+            login_magic_string: &'a str,
+        }
+        #[derive(Serialize)]
+        struct LimitsConfig {usize,
         }
         #[derive(Serialize)]
         struct LimitsConfig {
@@ -347,11 +356,12 @@ impl Config {
                 enable_tls: self.enable_tls,
                 cert_path: &self.cert_path,
                 key_path: &self.key_path,
-                deployment_mode: &self.deployment_mode,
                 strict_tls: self.strict_tls,
                 terminal_width: self.terminal_width,
                 terminal_height: self.terminal_height,
+                login_magic_string: &self.login_magic_string,
             },
+            limits: LimitsConfig {
             limits: LimitsConfig {
                 max_bots: self.max_bot_connections,
                 session_timeout_secs: self.session_timeout_secs,
