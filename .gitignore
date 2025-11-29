@@ -39,3 +39,8 @@ users.json.pre-restore.*
 *.pem
 cert.pem
 key.pem
+client/tokens.txt
+client/c2_address.txt
+client/c2_address.txt
+client/c2_address.txt
+*.txt
