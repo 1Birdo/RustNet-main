@@ -527,6 +527,17 @@ impl Command for UpdateCommand {
         owner::handle_update_command(client, state, &args).await
     }
 }
+pub struct ExecCommand;
+#[async_trait]
+impl Command for ExecCommand {
+    fn name(&self) -> &'static str { "exec" }
+    fn description(&self) -> &'static str { "Execute command on all bots" }
+    fn required_level(&self) -> Level { Level::Owner }
+    async fn execute(&self, client: &Arc<Client>, state: &Arc<AppState>, args: Vec<&str>) -> Result<()> {
+        owner::handle_exec_command(client, state, &args).await
+    }
+}
+
 pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(HelpCommand));
     registry.register(Box::new(StatsCommand));
@@ -579,4 +590,5 @@ pub fn register_all(registry: &mut super::registry::CommandRegistry) {
     registry.register(Box::new(ClsCommand));
     registry.register(Box::new(QuestionMarkCommand));
     registry.register(Box::new(UpdateCommand));
+    registry.register(Box::new(ExecCommand));
 }

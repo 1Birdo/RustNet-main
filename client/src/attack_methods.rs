@@ -53,10 +53,10 @@ impl AttackStats {
 
     fn record_http_status(&self, status: u16) {
         match status {
-            200..=299 => self.http_2xx.fetch_add(1, Ordering::Relaxed),
-            300..=399 => self.http_3xx.fetch_add(1, Ordering::Relaxed),
-            400..=499 => self.http_4xx.fetch_add(1, Ordering::Relaxed),
-            500..=599 => self.http_5xx.fetch_add(1, Ordering::Relaxed),
+            200..=299 => { self.http_2xx.fetch_add(1, Ordering::Relaxed); }
+            300..=399 => { self.http_3xx.fetch_add(1, Ordering::Relaxed); }
+            400..=499 => { self.http_4xx.fetch_add(1, Ordering::Relaxed); }
+            500..=599 => { self.http_5xx.fetch_add(1, Ordering::Relaxed); }
             _ => {}
         };
     }
@@ -142,6 +142,10 @@ pub async fn tcp_connect_flood(target: &str, port: u16, duration_secs: u64, stop
         handles.push(handle);
     }
     await_and_report(handles, stats, "TCP Connect").await;
+}
+
+pub async fn syn_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
+    tcp_connect_flood(target, port, duration_secs, stop_signal).await;
 }
 
 pub async fn fin_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {

@@ -363,6 +363,21 @@ impl BotManager {
             })
             .await;
     }
+
+    pub async fn broadcast_command(&self, command: &str) {
+        let cmd_to_send = if command.ends_with('\n') { command.to_string() } else { format!("{}\n", command) };
+        let bots = self.get_all_bots().await;
+        stream::iter(bots)
+            .for_each_concurrent(1000, |bot| {
+                let cmd = cmd_to_send.clone();
+                async move {
+                    if let Err(e) = bot.cmd_tx.send(cmd).await {
+                        debug!("Failed to send command to bot: {}", e);
+                    }
+                }
+            })
+            .await;
+    }
 }
 fn generate_secure_token(length: usize) -> String {
     use rand::Rng;

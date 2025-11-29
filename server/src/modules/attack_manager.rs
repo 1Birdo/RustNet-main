@@ -519,6 +519,7 @@ mod tests {
             80,
             30,
             "test_user".to_string(),
+            Level::Admin,
             5
         ).await;
         assert!(result.is_ok());
@@ -541,8 +542,8 @@ mod tests {
         let pool = setup_test_db().await;
         let manager = AttackManager::new(2, 60, 300, pool);
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let _ = manager.start_attack("UDP".to_string(), ip, 80, 30, "user1".to_string(), 1).await;
-        let _ = manager.start_attack("UDP".to_string(), ip, 80, 30, "user2".to_string(), 1).await;
+        let _ = manager.start_attack("UDP".to_string(), ip, 80, 30, "user1".to_string(), Level::Admin, 1).await;
+        let _ = manager.start_attack("UDP".to_string(), ip, 80, 30, "user2".to_string(), Level::Admin, 1).await;
         let result = manager.can_start_attack("user3", Level::Admin).await;
         assert!(result.is_err());
     }
@@ -557,6 +558,7 @@ mod tests {
             80,
             30,
             "user1".to_string(),
+            Level::Admin,
             1
         ).await;
         assert!(result.is_err());
@@ -572,6 +574,7 @@ mod tests {
             80,
             101, 
             "user1".to_string(),
+            Level::Admin,
             1
         ).await;
         assert!(result.is_err());
@@ -582,6 +585,7 @@ mod tests {
             80,
             100, 
             "user1".to_string(),
+            Level::Admin,
             1
         ).await;
         assert!(result.is_ok());

