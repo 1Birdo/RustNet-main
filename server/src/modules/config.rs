@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::fs;
+use rand::{distributions::Alphanumeric, Rng};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_user_server_ip")]
@@ -129,7 +130,19 @@ impl Config {
             }
         }
         tracing::warn!("No config file found, using environment variables and defaults");
-        let config = Self::from_env();
+        let mut config = Self::from_env();
+        
+        // Security: Ensure login_magic_string is not the default "loginforme"
+        if config.login_magic_string == "loginforme" {
+            let random_string: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(32)
+                .map(char::from)
+                .collect();
+            config.login_magic_string = random_string;
+            tracing::warn!("SECURITY NOTICE: Generated random login_magic_string for security.");
+        }
+
         if let Err(e) = config.save() {
             tracing::warn!("Failed to save default configuration: {}", e);
         } else {

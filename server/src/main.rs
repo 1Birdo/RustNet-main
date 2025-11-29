@@ -76,6 +76,9 @@ async fn main() -> Result<()> {
         return Err(CncError::ConfigError(e));
     }
     info!("[OK] Configuration loaded successfully");
+    if config.login_magic_string == "loginforme" {
+        warn!("SECURITY WARNING: Default login_magic_string 'loginforme' is in use. Change this in config/server.toml immediately!");
+    }
     let db_url = format!("sqlite:{}", config_dir.join("rustnet.db").to_string_lossy());
     info!("Initializing database at {}", db_url);
     let db_pool = init_database(&db_url).await?;

