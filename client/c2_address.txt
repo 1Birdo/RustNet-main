@@ -1,1 +1,2 @@
-167.88.166.164:7002
+# Placeholder address. Set to your C2 host before running (e.g., 127.0.0.1:7002).
+127.0.0.1:7002
