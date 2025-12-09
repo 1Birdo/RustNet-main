@@ -6,8 +6,11 @@
 |------|-------|-------|
 | ![User](https://github.com/user-attachments/assets/0ae15cea-5c40-45e5-babe-7b4bd928c1b3) | ![Admin](https://github.com/user-attachments/assets/c354de20-11ff-41eb-a91e-d5bdcd64aa0e)  | ![Owner](https://github.com/user-attachments/assets/f2c72fc3-b05b-45e4-9d33-556a73c1b78e) |
 
-## Key Features
+| C2 Debug | Client Debug  |
+|----------|---------------|
+| ![C2](https://github.com/user-attachments/assets/0ba39e5a-4c87-415c-91b5-be3b9bd3e09e) | ![Client](https://github.com/user-attachments/assets/e91bebee-c33f-4300-8fe6-14a37281e8ed) |
 
+## Key Features
 
 This is an improved and more polished version of **BotnetGoV2**, redesigned from the ground up to be cleaner, faster, and easier to work with.
 
